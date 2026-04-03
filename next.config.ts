@@ -1,7 +1,33 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  turbopack: {
+    root: "C:/Users/shaan/OneDrive/Desktop/meeho/meeshocopy",
+  },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'images.pexels.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.pexels.com',
+      },
+      // Add more domains as needed later
+      {
+        protocol: 'https',
+        hostname: 'supabase.co',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+      },
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos',
+      },
+    ],
+  },
 };
-
-export default nextConfig;
+    
+module.exports = nextConfig;      
