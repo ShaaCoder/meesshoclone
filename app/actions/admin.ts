@@ -234,7 +234,7 @@ export async function createShipmentByAdmin(orderId: string) {
   /* ============================= */
   /* ❌ PREVENT DUPLICATE */
   /* ============================= */
-  if (order.awb_code) {
+  if (order.shipment_id) {
     throw new Error("Shipment already created");
   }
 
@@ -251,38 +251,62 @@ export async function createShipmentByAdmin(orderId: string) {
     console.log("✅ SHIPMENT CREATED:", shipment);
 
     /* ============================= */
-    /* 3. ASSIGN COURIER (IMPORTANT) */
+    /* 3. TRY COURIER ASSIGN */
     /* ============================= */
-    const courier = await assignCourier(shipment.shipment_id);
+    let courier: any = null;
 
-    console.log("🚚 COURIER ASSIGNED:", courier);
-
-    if (!courier?.awb_code) {
-      throw new Error("Courier assignment failed");
+    try {
+      courier = await assignCourier(shipment.shipment_id);
+      console.log("🚚 COURIER RESPONSE:", courier);
+    } catch (err: any) {
+      console.log("⚠️ Courier assign failed (TEST MODE):", err.message);
     }
 
     /* ============================= */
-    /* 4. SAVE ALL DATA */
+    /* 🧠 TEST MODE DETECTION */
+    /* ============================= */
+    const isTestMode =
+      !courier?.awb_code || !courier?.courier_name;
+
+    /* ============================= */
+    /* 4. SAVE DATA (IMPORTANT) */
     /* ============================= */
     await supabaseAdmin
       .from("orders")
       .update({
         shipment_id: shipment.shipment_id,
-        awb_code: courier.awb_code,
-        courier_name: courier.courier_name,
-        tracking_url: `https://shiprocket.co/tracking/${courier.awb_code}`,
+
+        // ✅ if courier assigned
+        awb_code: courier?.awb_code || null,
+        courier_name:
+          courier?.courier_name || "Pending Assignment",
+
+        tracking_url: courier?.awb_code
+          ? `https://shiprocket.co/tracking/${courier.awb_code}`
+          : "https://shiprocket.co/tracking/",
+
         status: "shipped",
         shipped_at: new Date(),
       })
       .eq("id", orderId);
 
-    console.log("📦 ORDER UPDATED SUCCESS");
+    /* ============================= */
+    /* 🔥 LOG FINAL STATE */
+    /* ============================= */
+    if (isTestMode) {
+      console.log("⚠️ TEST MODE ACTIVE → No courier assigned");
+    } else {
+      console.log("✅ COURIER ASSIGNED SUCCESS");
+    }
 
-    return; // ✅ required (void)
+    return;
   } catch (error: any) {
     console.error("❌ ADMIN SHIPMENT ERROR:", error.message);
 
-    throw new Error(error.message || "Shipment failed");
+    // ❗ DO NOT BREAK SYSTEM
+    throw new Error(
+      error.message || "Shipment failed (safe mode)"
+    );
   }
 }
 
@@ -314,4 +338,56 @@ export async function markWithdrawPaid(id: string) {
     .from("withdraw_requests")
     .update({ status: "paid" })
     .eq("id", id);
+}
+
+
+export async function retryCourierAssign(orderId: string) {
+  try {
+    /* ============================= */
+    /* 📦 GET ORDER */
+    /* ============================= */
+    const { data: order, error } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("id", orderId)
+      .single();
+
+    if (error || !order) {
+      throw new Error("Order not found");
+    }
+
+    if (!order.shipment_id) {
+      throw new Error("Shipment not created yet");
+    }
+
+    /* ============================= */
+    /* 🚚 ASSIGN COURIER AGAIN */
+    /* ============================= */
+    const courier = await assignCourier(order.shipment_id);
+
+    console.log("🔁 RETRY COURIER RESPONSE:", courier);
+
+    if (!courier?.awb_code) {
+      throw new Error("Still failed. Recharge wallet.");
+    }
+
+    /* ============================= */
+    /* ✅ UPDATE ORDER */
+    /* ============================= */
+    await supabaseAdmin
+      .from("orders")
+      .update({
+        awb_code: courier.awb_code,
+        courier_name: courier.courier_name,
+        tracking_url: `https://shiprocket.co/tracking/${courier.awb_code}`,
+      })
+      .eq("id", orderId);
+
+    console.log("✅ COURIER ASSIGNED AFTER RETRY");
+
+  } catch (error: any) {
+    console.error("❌ RETRY ERROR:", error.message);
+
+    throw new Error(error.message || "Retry failed");
+  }
 }

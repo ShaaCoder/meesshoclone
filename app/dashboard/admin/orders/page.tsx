@@ -2,7 +2,11 @@ import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { updateOrderStatus } from "@/app/actions/seller";
-import { markSellerPaid, createShipmentByAdmin } from "@/app/actions/admin";
+import {
+  markSellerPaid,
+  createShipmentByAdmin,
+  retryCourierAssign, // 🔥 NEW
+} from "@/app/actions/admin";
 
 export default async function OrdersPage() {
   const supabase = await getSupabaseServer();
@@ -86,6 +90,9 @@ export default async function OrdersPage() {
                 Number(order.total_amount || 0) -
                 Number(order.seller_payout || 0);
 
+              const isCourierPending =
+                order.courier_name === "Pending Assignment";
+
               return (
                 <tr key={order.id} className="border-t">
 
@@ -129,10 +136,28 @@ export default async function OrdersPage() {
 
                   {/* 🚚 SHIPMENT */}
                   <td className="p-3 text-xs">
-                    {order.awb_code ? (
+                    {isCourierPending ? (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-yellow-600 font-medium">
+                          Courier Pending
+                        </span>
+
+                        {/* 🔁 RETRY BUTTON */}
+                        <form
+                          action={retryCourierAssign.bind(
+                            null,
+                            order.id
+                          )}
+                        >
+                          <button className="text-xs text-blue-600 underline">
+                            Retry Assign
+                          </button>
+                        </form>
+                      </div>
+                    ) : order.awb_code ? (
                       <div className="flex flex-col gap-1">
                         <span className="text-green-600 font-medium">
-                          {order.courier_name || "Shiprocket"}
+                          {order.courier_name}
                         </span>
                         <a
                           href={`https://shiprocket.co/tracking/${order.awb_code}`}
@@ -175,16 +200,16 @@ export default async function OrdersPage() {
                   {/* ACTIONS */}
                   <td className="p-3 space-y-1 flex flex-col">
 
-                    {/* ❌ PAYMENT BLOCK */}
+                    {/* PAYMENT BLOCK */}
                     {order.payment_status !== "paid" && (
                       <span className="text-red-500 text-xs">
                         Payment Pending
                       </span>
                     )}
 
-                    {/* 🚚 CREATE SHIPMENT */}
+                    {/* CREATE SHIPMENT */}
                     {order.payment_status === "paid" &&
-                      !order.awb_code && (
+                      !order.shipment_id && (
                         <form
                           action={createShipmentByAdmin.bind(
                             null,
@@ -197,7 +222,7 @@ export default async function OrdersPage() {
                         </form>
                       )}
 
-                    {/* 📦 MARK DELIVERED */}
+                    {/* MARK DELIVERED */}
                     {order.status === "shipped" && (
                       <form
                         action={updateOrderStatus.bind(
@@ -212,7 +237,7 @@ export default async function OrdersPage() {
                       </form>
                     )}
 
-                    {/* 💰 PAY SELLER */}
+                    {/* PAY SELLER */}
                     {order.payment_status === "paid" &&
                       order.status === "delivered" &&
                       !order.seller_paid && (
@@ -228,7 +253,7 @@ export default async function OrdersPage() {
                         </form>
                       )}
 
-                    {/* ✅ DONE */}
+                    {/* DONE */}
                     {order.status === "delivered" &&
                       order.seller_paid && (
                         <span className="text-green-600 text-xs font-semibold">

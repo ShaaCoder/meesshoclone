@@ -17,6 +17,7 @@ const links = [
   { href: "/dashboard/seller/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/seller/wallet", label: "Wallet", icon: BarChart3 },
   { href: "/dashboard/seller/profile", label: "profile", icon: BarChart3 },
+  { href: "/dashboard/seller/invoices", label: "Invoices", icon: BarChart3 },
 ];
 
 export default function SellerSidebar() {

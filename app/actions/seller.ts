@@ -1,8 +1,9 @@
 "use server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { generateInvoices } from "./invoice";
+// import { generateInvoices } from "./invoice";
 import { redirect } from "next/navigation";
+import { generateSellerInvoice } from "./invoice";
 /* ============================= */
 /* 📦 CREATE PRODUCT */
 /* ============================= */
@@ -190,6 +191,8 @@ export async function deleteProduct(id: string) {
 /* ============================= */
 /* 🔥 UPDATE ORDER STATUS */
 /* ============================= */
+
+
 export async function updateOrderStatus(
   orderId: string,
   status: string
@@ -197,137 +200,180 @@ export async function updateOrderStatus(
   const supabase = await getSupabaseServer();
 
   /* ============================= */
+  /* 👤 GET USER */
+  /* ============================= */
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Unauthorized");
+
+  /* ============================= */
+  /* 🚫 SELLER PERMISSION */
+  /* ============================= */
+  if (user.role === "seller") {
+    if (!["accepted", "rejected"].includes(status)) {
+      throw new Error("Not allowed");
+    }
+  }
+
+  /* ============================= */
   /* 🧾 GET ORDER */
   /* ============================= */
-  const { data: existingOrder, error } = await supabase
+  const { data: order, error } = await supabase
     .from("orders")
     .select("*")
     .eq("id", orderId)
     .single();
 
-  if (error || !existingOrder) {
+  if (error || !order) {
     throw new Error("Order not found");
-  }
-
-  /* 🚫 PREVENT DOUBLE PAYOUT */
-  if (
-    existingOrder.status === "delivered" &&
-    existingOrder.seller_payout > 0
-  ) {
-    return;
   }
 
   /* ============================= */
   /* 🔄 UPDATE STATUS */
   /* ============================= */
-  const { data: order, error: updateError } = await supabase
-    .from("orders")
-    .update({ status })
-    .eq("id", orderId)
-    .select()
-    .single();
+  const updateData: any = { status };
 
-  if (updateError || !order) {
+  if (status === "delivered") {
+    updateData.delivered_at = new Date().toISOString();
+  }
+
+  const { error: updateError } = await supabase
+    .from("orders")
+    .update(updateData)
+    .eq("id", orderId);
+
+  if (updateError) {
+    console.error("❌ STATUS UPDATE ERROR:", updateError);
     throw new Error("Update failed");
   }
 
+  console.log("🔥 STATUS UPDATED:", status);
+
   /* ============================= */
-  /* 💰 PAYOUT + INVOICE LOGIC */
+  /* 🧾 GENERATE INVOICE */
   /* ============================= */
-  if (status === "delivered") {
+  if (status === "accepted") {
+    console.log("🚀 START INVOICE GENERATION");
+
+    try {
+      const url = await generateSellerInvoice(orderId);
+      console.log("✅ INVOICE CREATED:", url);
+    } catch (err) {
+      console.error("❌ INVOICE FAILED:", err);
+    }
+  }
+
+  /* ============================= */
+  /* 💰 PAYOUT (ADMIN ONLY) */
+  /* ============================= */
+  if (status === "delivered" && user.role !== "seller") {
     const { data: items } = await supabase
       .from("order_items")
       .select("*")
       .eq("order_id", orderId);
 
-    if (!items || items.length === 0) return;
+    if (!items || items.length === 0) {
+      throw new Error("Order items not found");
+    }
 
-    /* ============================= */
-    /* 💵 CALCULATIONS */
-    /* ============================= */
-    const baseTotal = items.reduce((sum, item) => {
-      return sum + Number(item.base_price) * Number(item.quantity);
-    }, 0);
+    const sellerMap: Record<string, number> = {};
+    let sellingTotal = 0;
 
-    const sellingTotal = items.reduce((sum, item) => {
-      return sum + Number(item.selling_price) * Number(item.quantity);
-    }, 0);
+    items.forEach((item) => {
+      const sellerId = item.seller_id;
+
+      const base =
+        Number(item.base_price || 0) * Number(item.quantity || 1);
+
+      const selling =
+        Number(item.selling_price || 0) * Number(item.quantity || 1);
+
+      sellingTotal += selling;
+
+      if (!sellerId) return;
+
+      sellerMap[sellerId] = (sellerMap[sellerId] || 0) + base;
+    });
+
+    const baseTotal = Object.values(sellerMap).reduce(
+      (a, b) => a + b,
+      0
+    );
 
     const margin = sellingTotal - baseTotal;
 
-    if (baseTotal <= 0) return;
+    /* PAY SELLERS */
+    for (const sellerId of Object.keys(sellerMap)) {
+      const payout = sellerMap[sellerId];
 
-    const sellerId = order.seller_id;       // ✅ FIXED
-    const resellerId = order.reseller_id;
+      const { data: wallet } = await supabase
+        .from("wallets")
+        .select("*")
+        .eq("reseller_id", sellerId)
+        .maybeSingle();
 
-    /* ============================= */
-    /* 💰 SELLER WALLET */
-    /* ============================= */
-    const { error: sellerWalletError } = await supabase.rpc(
-      "increment_wallet",
-      {
-        user_id: sellerId,
-        amount: baseTotal,
+      if (!wallet) {
+        await supabase.from("wallets").insert({
+          reseller_id: sellerId,
+          balance: payout,
+        });
+      } else {
+        await supabase
+          .from("wallets")
+          .update({
+            balance: Number(wallet.balance || 0) + payout,
+          })
+          .eq("reseller_id", sellerId);
       }
-    );
 
-    if (sellerWalletError) {
-      throw new Error("Seller payout failed");
+      await supabase.from("transactions").insert({
+        reseller_id: sellerId,
+        amount: payout,
+        type: "credit",
+      });
     }
 
-    /* ============================= */
-    /* 💰 RESELLER WALLET */
-    /* ============================= */
-    if (margin > 0 && resellerId) {
-      await supabase.rpc("increment_wallet", {
-        user_id: resellerId,
-        amount: margin,
-      });
+    /* RESELLER PROFIT */
+    if (margin > 0 && order.reseller_id) {
+      const resellerId = order.reseller_id;
+
+      const { data: wallet } = await supabase
+        .from("wallets")
+        .select("*")
+        .eq("reseller_id", resellerId)
+        .maybeSingle();
+
+      if (!wallet) {
+        await supabase.from("wallets").insert({
+          reseller_id: resellerId,
+          balance: margin,
+        });
+      } else {
+        await supabase
+          .from("wallets")
+          .update({
+            balance: Number(wallet.balance || 0) + margin,
+          })
+          .eq("reseller_id", resellerId);
+      }
 
       await supabase.from("transactions").insert({
         reseller_id: resellerId,
         amount: margin,
         type: "credit",
-        status: "completed",
       });
     }
 
-    /* ============================= */
-    /* 📜 SELLER TRANSACTION */
-    /* ============================= */
-    await supabase.from("transactions").insert({
-      reseller_id: sellerId,
-      amount: baseTotal,
-      type: "credit",
-      status: "completed",
-    });
-
-    /* ============================= */
-    /* 🧾 GENERATE INVOICES */
-    /* ============================= */
-    // const { generateInvoices } = await import("@/actions/invoice");
-
-    await generateInvoices({
-      id: orderId,
-      user_id: order.user_id,
-      seller_id: sellerId,
-      reseller_id: resellerId,
-      base_price: baseTotal,
-      selling_price: sellingTotal,
-      margin,
-    });
-
-    /* ============================= */
-    /* 💾 SAVE PAYOUT */
-    /* ============================= */
     await supabase
       .from("orders")
       .update({
+        seller_paid: true,
         seller_payout: baseTotal,
       })
       .eq("id", orderId);
 
-    console.log("✅ SELLER PAID:", baseTotal);
-    console.log("✅ RESELLER EARNED:", margin);
+    console.log("✅ PAYOUT DONE");
   }
 }

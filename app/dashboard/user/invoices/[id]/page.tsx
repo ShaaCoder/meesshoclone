@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { InvoicePDF } from "@/lib/pdf/InvoicePdf";
+import { InvoicePDF } from "@/lib/pdf/generateInvoicePDF";
 import { renderToStream } from "@react-pdf/renderer";
 
 export async function GET(

@@ -184,25 +184,41 @@ export default async function SellerOrdersPage() {
             </div>
 
             {/* ACTIONS */}
-            <div className="flex gap-2">
+      <div className="flex gap-2">
 
-              <form
-                action={updateOrderStatus.bind(null, order.id, "accepted")}
-              >
-                <button className="bg-green-600 text-white px-4 py-2 rounded">
-                  Accept
-                </button>
-              </form>
+  {/* ✅ ACCEPT */}
+  {(order.status === "placed" || order.status === "pending") && (
+    <form action={updateOrderStatus.bind(null, order.id, "accepted")}>
+      <button className="bg-green-600 text-white px-4 py-2 rounded">
+        Accept
+      </button>
+    </form>
+  )}
 
-              <form
-                action={updateOrderStatus.bind(null, order.id, "shipped")}
-              >
-                <button className="bg-blue-600 text-white px-4 py-2 rounded">
-                  Ship
-                </button>
-              </form>
+  {/* ❌ REJECT */}
+  {(order.status === "placed" || order.status === "pending") && (
+    <form action={updateOrderStatus.bind(null, order.id, "rejected")}>
+      <button className="bg-red-600 text-white px-4 py-2 rounded">
+        Reject
+      </button>
+    </form>
+  )}
 
-            </div>
+  {/* 🕒 WAITING */}
+  {order.status === "accepted" && (
+    <span className="text-yellow-600 font-medium">
+      Waiting for Admin 🚚
+    </span>
+  )}
+
+  {/* ❌ REJECTED */}
+  {order.status === "rejected" && (
+    <span className="text-red-600 font-medium">
+      Order Rejected
+    </span>
+  )}
+
+</div>
 
           </div>
         );
