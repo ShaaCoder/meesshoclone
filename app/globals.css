@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
-/* 🎨 ROOT THEME */
 :root {
-  --background: #f3f4f6; /* light gray dashboard */
-  --foreground: #111827; /* dark text */
+  --primary: #2563eb;   /* Blue */
+  --primary-dark: #1d4ed8;
+  --background: #ffffff; 
+  --foreground: #111827;
 }
-
 /* 🌙 DARK MODE (optional) */
 @media (prefers-color-scheme: dark) {
   :root {
@@ -49,4 +49,58 @@ button:hover {
   border: 1px solid #ddd;
   padding: 10px;
   border-radius: 8px;
+}
+
+/* 🔵 SIMPLE BLUE HEADER OVERRIDE */
+header {
+  background: #2563eb !important;
+  color: white !important;
+}
+
+header input {
+  background: white !important;
+  color: black !important;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+header input::placeholder {
+  color: #6b7280;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.8s ease-out forwards;
+}
+
+.animate-fade-in-delay {
+  animation: fade-in 0.8s ease-out 0.3s forwards;
+  opacity: 0;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-25px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-float-delay {
+  animation: float 7s ease-in-out 1.5s infinite;
+}
+
+.animate-float-slow {
+  animation: float 9s ease-in-out 3s infinite;
+}
+
+/* Subtle background drift */
+@keyframes drift {
+  from { background-position: 0 0; }
+  to { background-position: 100px 100px; }
 }

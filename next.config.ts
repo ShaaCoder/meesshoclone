@@ -3,31 +3,28 @@ const nextConfig = {
   turbopack: {
     root: "C:/Users/shaan/OneDrive/Desktop/meeho/meeshocopy",
   },
+
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'images.pexels.com',
+        protocol: "https",
+        hostname: "yobayudahkjtlgolcuoh.supabase.co",
+        pathname: "/storage/v1/object/public/**",
       },
       {
-        protocol: 'https',
-        hostname: '**.pexels.com',
-      },
-      // Add more domains as needed later
-      {
-        protocol: 'https',
-        hostname: 'supabase.co',
+        protocol: "https",
+        hostname: "images.unsplash.com",
       },
       {
-        protocol: 'https',
-        hostname: '*.supabase.co',
+        protocol: "https",
+        hostname: "picsum.photos",
       },
       {
-        protocol: 'https',
-        hostname: 'picsum.photos',
+        protocol: "https",
+        hostname: "images.pexels.com",
       },
     ],
   },
 };
-    
-module.exports = nextConfig;      
+
+module.exports = nextConfig;

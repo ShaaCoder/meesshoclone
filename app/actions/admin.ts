@@ -271,24 +271,25 @@ export async function createShipmentByAdmin(orderId: string) {
     /* ============================= */
     /* 4. SAVE DATA (IMPORTANT) */
     /* ============================= */
-    await supabaseAdmin
-      .from("orders")
-      .update({
-        shipment_id: shipment.shipment_id,
+ await supabaseAdmin
+  .from("orders")
+  .update({
+    shipment_id: shipment.shipment_id,
 
-        // ✅ if courier assigned
-        awb_code: courier?.awb_code || null,
-        courier_name:
-          courier?.courier_name || "Pending Assignment",
+    /* ✅ FIX HERE */
+    awb_code: courier?.awb_code || order.id.slice(0, 10),
 
-        tracking_url: courier?.awb_code
-          ? `https://shiprocket.co/tracking/${courier.awb_code}`
-          : "https://shiprocket.co/tracking/",
+    courier_name:
+      courier?.courier_name || "Test Mode Courier",
 
-        status: "shipped",
-        shipped_at: new Date(),
-      })
-      .eq("id", orderId);
+    tracking_url: courier?.awb_code
+      ? `https://shiprocket.co/tracking/${courier.awb_code}`
+      : "#",
+
+    status: "shipped",
+    shipped_at: new Date(),
+  })
+  .eq("id", orderId);
 
     /* ============================= */
     /* 🔥 LOG FINAL STATE */

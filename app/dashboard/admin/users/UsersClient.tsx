@@ -23,7 +23,7 @@ export default function UsersClient({ users }: any) {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Users Management</h1>
+      <h1 className="text-2xl font-bold mb-6 text-black ">Users Management</h1>
 
       <div className="bg-white rounded-xl shadow overflow-hidden">
         <table className="w-full">

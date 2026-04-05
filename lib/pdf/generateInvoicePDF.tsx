@@ -1,46 +1,43 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import bwipjs from "bwip-js";
 
-export async function generateInvoicePDF(
-  order: any,
-  items: any[],
-  invoiceNumber: string
-) {
+export async function generateInvoicePDF(order: any, items: any[], invoiceNumber: string) {
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([600, 800]);
+  const page = pdfDoc.addPage([600, 900]);
 
-  /* ✅ DEFAULT FONT */
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  let y = 760;
+  let y = 860;
 
-  /* ================= HEADER ================= */
-  page.drawText("TAX INVOICE", {
-    x: 220,
-    y,
-    size: 18,
-    font: boldFont,
-  });
+  /* ================= SELLER BLOCK ================= */
+  page.drawText("Sold By:", { x: 50, y, size: 10, font: bold });
+  y -= 15;
 
+  page.drawText("Your Store Pvt Ltd", { x: 50, y, size: 10, font });
+  y -= 12;
+  page.drawText("GSTIN: 07ABCDE1234F1Z5", { x: 50, y, size: 10, font });
+  y -= 12;
+  page.drawText("Delhi, India - 110001", { x: 50, y, size: 10, font });
+
+  /* ================= INVOICE HEADER ================= */
   y -= 30;
 
-  page.drawText(`Invoice No: ${invoiceNumber}`, {
-    x: 50,
+  page.drawText("TAX INVOICE", {
+    x: 230,
     y,
-    size: 10,
-    font,
-  });
-
-  page.drawText(`Date: ${new Date().toLocaleDateString()}`, {
-    x: 400,
-    y,
-    size: 10,
-    font,
+    size: 16,
+    font: bold,
   });
 
   y -= 25;
 
-  page.drawText(`Order ID: ${order.order_code}`, {
+  page.drawText(`Invoice: ${invoiceNumber}`, { x: 50, y, size: 10, font });
+  page.drawText(`Order: ${order.order_code}`, { x: 300, y, size: 10, font });
+
+  y -= 15;
+
+  page.drawText(`Date: ${new Date().toLocaleDateString()}`, {
     x: 50,
     y,
     size: 10,
@@ -48,40 +45,65 @@ export async function generateInvoicePDF(
   });
 
   /* ================= CUSTOMER ================= */
-  y -= 40;
+  y -= 25;
 
-  page.drawText("BILL TO:", {
+  page.drawText("Ship To:", { x: 50, y, size: 10, font: bold });
+  y -= 15;
+
+  page.drawText(order.name, { x: 50, y, size: 10, font });
+  y -= 12;
+  page.drawText(order.phone, { x: 50, y, size: 10, font });
+  y -= 12;
+  page.drawText(order.address, { x: 50, y, size: 10, font });
+  y -= 12;
+  page.drawText(`${order.city}, ${order.state} - ${order.pincode}`, {
     x: 50,
     y,
-    size: 12,
-    font: boldFont,
+    size: 10,
+    font,
   });
 
-  y -= 20;
-
-  page.drawText(order.name || "-", { x: 50, y, size: 10, font });
-  y -= 15;
-
-  page.drawText(order.phone || "-", { x: 50, y, size: 10, font });
-  y -= 15;
-
-  page.drawText(order.address || "-", { x: 50, y, size: 10, font });
-  y -= 15;
-
-  page.drawText(
-    `${order.city}, ${order.state} - ${order.pincode}`,
-    { x: 50, y, size: 10, font }
-  );
-
-  /* ================= ITEMS ================= */
+  /* ================= AWB BARCODE ================= */
   y -= 40;
 
-  page.drawText("Product", { x: 50, y, size: 11, font: boldFont });
-  page.drawText("Qty", { x: 300, y, size: 11, font: boldFont });
-  page.drawText("Price", { x: 350, y, size: 11, font: boldFont });
-  page.drawText("Total", { x: 450, y, size: 11, font: boldFont });
+  const awb = order.awb_code || order.id.slice(0, 10);
 
-  y -= 20;
+  try {
+    const png = await bwipjs.toBuffer({
+      bcid: "code128",
+      text: awb,
+      scale: 2,
+      height: 10,
+    });
+
+    const image = await pdfDoc.embedPng(png);
+
+    page.drawImage(image, {
+      x: 350,
+      y,
+      width: 200,
+      height: 60,
+    });
+
+    page.drawText(`AWB: ${awb}`, {
+      x: 350,
+      y: y - 15,
+      size: 10,
+      font,
+    });
+  } catch (err) {
+    console.log("Barcode failed");
+  }
+
+  /* ================= ITEMS ================= */
+  y -= 80;
+
+  page.drawText("Product", { x: 50, y, size: 10, font: bold });
+  page.drawText("Qty", { x: 300, y, size: 10, font: bold });
+  page.drawText("Price", { x: 350, y, size: 10, font: bold });
+  page.drawText("Total", { x: 450, y, size: 10, font: bold });
+
+  y -= 15;
 
   let subtotal = 0;
 
@@ -103,7 +125,6 @@ export async function generateInvoicePDF(
       font,
     });
 
-    /* ✅ FIX: use Rs. instead of ₹ */
     page.drawText(`Rs. ${item.price}`, {
       x: 350,
       y,
@@ -118,63 +139,25 @@ export async function generateInvoicePDF(
       font,
     });
 
-    y -= 20;
+    y -= 15;
   });
 
   /* ================= TOTAL ================= */
-  y -= 20;
-
-  page.drawLine({
-    start: { x: 50, y },
-    end: { x: 550, y },
-    thickness: 1,
-    color: rgb(0, 0, 0),
-  });
-
-  y -= 20;
-
-  page.drawText("Subtotal:", { x: 350, y, size: 11, font });
-  page.drawText(`Rs. ${subtotal}`, { x: 450, y, size: 11, font });
-
-  y -= 20;
+  y -= 10;
 
   const gst = subtotal * 0.18;
+  const total = subtotal + gst;
 
-  page.drawText("GST (18%):", { x: 350, y, size: 11, font });
-  page.drawText(`Rs. ${gst.toFixed(2)}`, { x: 450, y, size: 11, font });
-
-  y -= 20;
-
-  const grandTotal = subtotal + gst;
-
-  page.drawText("Total:", {
+  page.drawText(`Subtotal: Rs. ${subtotal}`, { x: 350, y, size: 10, font });
+  y -= 15;
+  page.drawText(`GST: Rs. ${gst.toFixed(2)}`, { x: 350, y, size: 10, font });
+  y -= 15;
+  page.drawText(`Total: Rs. ${total.toFixed(2)}`, {
     x: 350,
     y,
-    size: 13,
-    font: boldFont,
+    size: 12,
+    font: bold,
   });
 
-  page.drawText(`Rs. ${grandTotal.toFixed(2)}`, {
-    x: 450,
-    y,
-    size: 13,
-    font: boldFont,
-  });
-
-  /* ================= FOOTER ================= */
-  y -= 40;
-
-  page.drawText(
-    "This is a computer generated invoice. No signature required.",
-    {
-      x: 50,
-      y,
-      size: 9,
-      font,
-      color: rgb(0.4, 0.4, 0.4),
-    }
-  );
-
-  const pdfBytes = await pdfDoc.save();
-  return pdfBytes;
+  return await pdfDoc.save();
 }

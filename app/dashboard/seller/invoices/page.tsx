@@ -18,7 +18,7 @@ export default async function SellerInvoicesPage() {
     .order("created_at", { ascending: false });
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4 text-black">
       <h1 className="text-2xl font-bold">Invoices</h1>
 
       {invoices?.length === 0 && (
