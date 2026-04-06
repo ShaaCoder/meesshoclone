@@ -25,11 +25,7 @@ function EditProductForm({ product, categories, onClose }: any) {
 
           <input type="hidden" name="id" value={product.id} />
 
-          <input
-            name="name"
-            defaultValue={product.name}
-            className="border p-2 rounded"
-          />
+          <input name="name" defaultValue={product.name} className="border p-2 rounded" />
 
           <select
             name="category_id"
@@ -42,29 +38,12 @@ function EditProductForm({ product, categories, onClose }: any) {
             ))}
           </select>
 
-          <input
-            name="base_price"
-            type="number"
-            defaultValue={product.base_price}
-            className="border p-2 rounded"
-          />
+          <input name="base_price" type="number" defaultValue={product.base_price} className="border p-2 rounded" />
+          <input name="selling_price" type="number" defaultValue={product.selling_price} className="border p-2 rounded" />
+          <input name="stock" type="number" defaultValue={product.stock} className="border p-2 rounded" />
 
-          <input
-            name="selling_price"
-            type="number"
-            defaultValue={product.selling_price}
-            className="border p-2 rounded"
-          />
-
-          <input
-            name="stock"
-            type="number"
-            defaultValue={product.stock}
-            className="border p-2 rounded"
-          />
-
-          {/* 🔥 ADD NEW IMAGES */}
-          <div className="space-y-2">
+          {/* IMAGE */}
+          <div className="space-y-2 md:col-span-2">
             <input
               type="file"
               name="images"
@@ -73,10 +52,7 @@ function EditProductForm({ product, categories, onClose }: any) {
               className="border p-2 rounded w-full"
               onChange={(e) => {
                 const files = Array.from(e.target.files || []);
-                const urls = files.map((f) =>
-                  URL.createObjectURL(f)
-                );
-                setPreview(urls);
+                setPreview(files.map((f) => URL.createObjectURL(f)));
               }}
             />
 
@@ -87,11 +63,44 @@ function EditProductForm({ product, categories, onClose }: any) {
             </div>
           </div>
 
-          <textarea
-            name="description"
-            defaultValue={product.description}
-            className="border p-2 rounded md:col-span-2"
-          />
+          <textarea name="description" defaultValue={product.description} className="border p-2 rounded md:col-span-2" />
+
+          {/* ================= PRODUCT DETAILS ================= */}
+          <div className="md:col-span-2 border p-4 rounded space-y-3">
+            <h3 className="font-semibold">Product Details</h3>
+
+            <input name="gst_percent" type="number" defaultValue={product.gst_percent} className="border p-2 w-full rounded" />
+            <input name="hsn_code" defaultValue={product.hsn_code} className="border p-2 w-full rounded" />
+            <input name="country_of_origin" defaultValue={product.country_of_origin} className="border p-2 w-full rounded" />
+            <input name="tags" defaultValue={product.tags?.join(",")} className="border p-2 w-full rounded" />
+          </div>
+
+          {/* ================= MANUFACTURER ================= */}
+          <div className="md:col-span-2 border p-4 rounded space-y-3">
+            <h3 className="font-semibold">Manufacturer</h3>
+
+            <input name="manufacturer_name" defaultValue={product.manufacturer_name} className="border p-2 w-full rounded" />
+            <input name="manufacturer_address" defaultValue={product.manufacturer_address} className="border p-2 w-full rounded" />
+            <input name="manufacturer_pincode" defaultValue={product.manufacturer_pincode} className="border p-2 w-full rounded" />
+          </div>
+
+          {/* ================= PACKER ================= */}
+          <div className="md:col-span-2 border p-4 rounded space-y-3">
+            <h3 className="font-semibold">Packer</h3>
+
+            <input name="packer_name" defaultValue={product.packer_name} className="border p-2 w-full rounded" />
+            <input name="packer_address" defaultValue={product.packer_address} className="border p-2 w-full rounded" />
+            <input name="packer_pincode" defaultValue={product.packer_pincode} className="border p-2 w-full rounded" />
+          </div>
+
+          {/* ================= IMPORTER ================= */}
+          <div className="md:col-span-2 border p-4 rounded space-y-3">
+            <h3 className="font-semibold">Importer</h3>
+
+            <input name="importer_name" defaultValue={product.importer_name} className="border p-2 w-full rounded" />
+            <input name="importer_address" defaultValue={product.importer_address} className="border p-2 w-full rounded" />
+            <input name="importer_pincode" defaultValue={product.importer_pincode} className="border p-2 w-full rounded" />
+          </div>
 
           <DynamicAttributes categoryId={categoryId} />
 
@@ -142,13 +151,11 @@ export default function ProductsClient({ products, categories }: any) {
           </select>
 
           <input name="base_price" type="number" placeholder="Base Price" required className="border p-2 rounded" />
-
           <input name="selling_price" type="number" placeholder="Selling Price" className="border p-2 rounded" />
-
           <input name="stock" type="number" placeholder="Stock" className="border p-2 rounded" />
 
-          {/* 🔥 MULTIPLE IMAGE UPLOAD */}
-          <div className="space-y-2">
+          {/* IMAGE */}
+          <div className="space-y-2 md:col-span-2">
             <input
               type="file"
               name="images"
@@ -157,10 +164,7 @@ export default function ProductsClient({ products, categories }: any) {
               className="border p-2 rounded w-full"
               onChange={(e) => {
                 const files = Array.from(e.target.files || []);
-                const urls = files.map((file) =>
-                  URL.createObjectURL(file)
-                );
-                setPreview(urls);
+                setPreview(files.map((f) => URL.createObjectURL(f)));
               }}
             />
 
@@ -173,17 +177,44 @@ export default function ProductsClient({ products, categories }: any) {
 
           <textarea name="description" placeholder="Description" className="border p-2 rounded md:col-span-2" />
 
-          <DynamicAttributes categoryId={categoryId} />
-
-          {/* VARIANTS */}
+          {/* PRODUCT DETAILS */}
           <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Variants</h3>
+            <h3 className="font-semibold">Product Details</h3>
 
-            <input name="sizes" placeholder="Sizes (S,M,L)" className="border p-2 w-full rounded" />
-            <input name="colors" placeholder="Colors (Red,Blue)" className="border p-2 w-full rounded" />
-            <input name="variant_price" type="number" placeholder="Variant Price" className="border p-2 w-full rounded" />
-            <input name="variant_stock" type="number" placeholder="Stock per Variant" className="border p-2 w-full rounded" />
+            <input name="gst_percent" type="number" placeholder="GST %" className="border p-2 w-full rounded" />
+            <input name="hsn_code" placeholder="HSN Code" className="border p-2 w-full rounded" />
+            <input name="country_of_origin" placeholder="Country of Origin" className="border p-2 w-full rounded" />
+            <input name="tags" placeholder="Tags (comma separated)" className="border p-2 w-full rounded" />
           </div>
+
+          {/* MANUFACTURER */}
+          <div className="md:col-span-2 border p-4 rounded space-y-3">
+            <h3 className="font-semibold">Manufacturer</h3>
+
+            <input name="manufacturer_name" placeholder="Name" className="border p-2 w-full rounded" />
+            <input name="manufacturer_address" placeholder="Address" className="border p-2 w-full rounded" />
+            <input name="manufacturer_pincode" placeholder="Pincode" className="border p-2 w-full rounded" />
+          </div>
+
+          {/* PACKER */}
+          <div className="md:col-span-2 border p-4 rounded space-y-3">
+            <h3 className="font-semibold">Packer</h3>
+
+            <input name="packer_name" placeholder="Name" className="border p-2 w-full rounded" />
+            <input name="packer_address" placeholder="Address" className="border p-2 w-full rounded" />
+            <input name="packer_pincode" placeholder="Pincode" className="border p-2 w-full rounded" />
+          </div>
+
+          {/* IMPORTER */}
+          <div className="md:col-span-2 border p-4 rounded space-y-3">
+            <h3 className="font-semibold">Importer</h3>
+
+            <input name="importer_name" placeholder="Name" className="border p-2 w-full rounded" />
+            <input name="importer_address" placeholder="Address" className="border p-2 w-full rounded" />
+            <input name="importer_pincode" placeholder="Pincode" className="border p-2 w-full rounded" />
+          </div>
+
+          <DynamicAttributes categoryId={categoryId} />
 
           <button className="bg-black text-white py-3 rounded md:col-span-2">
             Add Product
@@ -191,12 +222,11 @@ export default function ProductsClient({ products, categories }: any) {
         </form>
       </div>
 
-      {/* ================= PRODUCTS LIST ================= */}
+      {/* PRODUCTS LIST */}
       <div className="grid md:grid-cols-3 gap-6">
         {products?.map((p: any) => (
           <div key={p.id} className="bg-white p-4 rounded-xl shadow space-y-3">
 
-            {/* IMAGE GALLERY */}
             <div className="flex gap-2 overflow-x-auto">
               {p.product_images?.length > 0 ? (
                 p.product_images.map((img: any) => (
@@ -209,30 +239,19 @@ export default function ProductsClient({ products, categories }: any) {
 
             <h2 className="font-bold">{p.name}</h2>
 
-            <p className="text-sm text-gray-500">
-              {p.categories?.name}
-            </p>
+            <p className="text-sm text-gray-500">{p.categories?.name}</p>
 
-            {/* 🔥 EDIT BUTTON */}
-            <button
-              onClick={() => setEditingProduct(p)}
-              className="bg-yellow-500 text-white py-1 rounded w-full"
-            >
+            <button onClick={() => setEditingProduct(p)} className="bg-yellow-500 text-white py-1 rounded w-full">
               Edit
             </button>
 
-            {/* 🗑 DELETE */}
-            <button
-              onClick={() => deleteProduct(p.id)}
-              className="bg-red-500 text-white py-1 rounded w-full"
-            >
+            <button onClick={() => deleteProduct(p.id)} className="bg-red-500 text-white py-1 rounded w-full">
               Delete
             </button>
           </div>
         ))}
       </div>
 
-      {/* 🔥 EDIT MODAL */}
       {editingProduct && (
         <EditProductForm
           product={editingProduct}

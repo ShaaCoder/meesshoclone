@@ -61,6 +61,9 @@ export async function createProduct(formData: FormData) {
 
   if (!user) throw new Error("Unauthorized");
 
+  /* ============================= */
+  /* 🧾 BASIC FIELDS */
+  /* ============================= */
   const name = formData.get("name") as string;
   const base_price = Number(formData.get("base_price"));
   const selling_price = Number(formData.get("selling_price"));
@@ -68,6 +71,32 @@ export async function createProduct(formData: FormData) {
   const category_id = formData.get("category_id") as string;
   const stock = Number(formData.get("stock"));
 
+  /* ============================= */
+  /* 🏭 EXTRA PRODUCT FIELDS */
+  /* ============================= */
+  const gst_percent = Number(formData.get("gst_percent") || 0);
+  const hsn_code = formData.get("hsn_code") as string;
+
+  const manufacturer_name = formData.get("manufacturer_name") as string;
+  const manufacturer_address = formData.get("manufacturer_address") as string;
+  const manufacturer_pincode = formData.get("manufacturer_pincode") as string;
+
+  const packer_name = formData.get("packer_name") as string;
+  const packer_address = formData.get("packer_address") as string;
+  const packer_pincode = formData.get("packer_pincode") as string;
+
+  const importer_name = formData.get("importer_name") as string;
+  const importer_address = formData.get("importer_address") as string;
+  const importer_pincode = formData.get("importer_pincode") as string;
+
+  const country_of_origin = formData.get("country_of_origin") as string;
+
+  const tagsRaw = formData.get("tags") as string; // comma separated
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()) : [];
+
+  /* ============================= */
+  /* VALIDATIONS */
+  /* ============================= */
   if (!name || !base_price || !category_id) {
     throw new Error("Missing required fields");
   }
@@ -81,7 +110,7 @@ export async function createProduct(formData: FormData) {
   }
 
   /* ============================= */
-  /* 🔥 FILES + LIMIT */
+  /* 📸 FILE UPLOAD */
   /* ============================= */
   const files = (formData.getAll("images") as File[])
     .filter((f) => f && f.size > 0);
@@ -94,9 +123,6 @@ export async function createProduct(formData: FormData) {
     throw new Error("Maximum 5 images allowed");
   }
 
-  /* ============================= */
-  /* 🔥 COMPRESS + UPLOAD */
-  /* ============================= */
   const uploadPromises = files.map(async (file) => {
     const compressed = await compressImage(file);
     return await uploadImage(compressed);
@@ -104,18 +130,19 @@ export async function createProduct(formData: FormData) {
 
   const urls = await Promise.all(uploadPromises);
 
-  const image = urls[0]; // thumbnail
-
-  const imageRows = urls.map((url) => ({ url }));
+  const image = urls[0];
 
   /* ============================= */
-  /* CREATE PRODUCT */
+  /* 🧠 SLUG */
   /* ============================= */
   const slug =
     name.toLowerCase().replace(/\s+/g, "-") +
     "-" +
     Math.floor(Math.random() * 1000);
 
+  /* ============================= */
+  /* 🚀 INSERT PRODUCT */
+  /* ============================= */
   const { data: product, error } = await supabase
     .from("products")
     .insert({
@@ -128,9 +155,29 @@ export async function createProduct(formData: FormData) {
       stock,
       seller_id: user.id,
       slug,
+      status: "pending",
+
       meta_title: `${name} | Buy Online`,
       meta_description: description?.slice(0, 150),
-      status: "pending",
+
+      /* ✅ NEW FIELDS */
+      gst_percent,
+      hsn_code,
+
+      manufacturer_name,
+      manufacturer_address,
+      manufacturer_pincode,
+
+      packer_name,
+      packer_address,
+      packer_pincode,
+
+      importer_name,
+      importer_address,
+      importer_pincode,
+
+      country_of_origin,
+      tags,
     })
     .select()
     .single();
@@ -138,16 +185,16 @@ export async function createProduct(formData: FormData) {
   if (error || !product) throw new Error("Product creation failed");
 
   /* ============================= */
-  /* SAVE IMAGES */
+  /* 🖼 SAVE IMAGES */
   /* ============================= */
+  const imageRows = urls.map((url) => ({
+    product_id: product.id,
+    url,
+  }));
+
   const { error: imgError } = await supabase
     .from("product_images")
-    .insert(
-      imageRows.map((img) => ({
-        product_id: product.id,
-        url: img.url,
-      }))
-    );
+    .insert(imageRows);
 
   if (imgError) throw new Error("Image DB insert failed");
 
@@ -169,6 +216,27 @@ export async function updateProduct(formData: FormData) {
   const category_id = formData.get("category_id") as string;
   const stock = Number(formData.get("stock"));
 
+  /* ✅ NEW FIELDS */
+  const gst_percent = Number(formData.get("gst_percent") || 0);
+  const hsn_code = formData.get("hsn_code") as string;
+
+  const manufacturer_name = formData.get("manufacturer_name") as string;
+  const manufacturer_address = formData.get("manufacturer_address") as string;
+  const manufacturer_pincode = formData.get("manufacturer_pincode") as string;
+
+  const packer_name = formData.get("packer_name") as string;
+  const packer_address = formData.get("packer_address") as string;
+  const packer_pincode = formData.get("packer_pincode") as string;
+
+  const importer_name = formData.get("importer_name") as string;
+  const importer_address = formData.get("importer_address") as string;
+  const importer_pincode = formData.get("importer_pincode") as string;
+
+  const country_of_origin = formData.get("country_of_origin") as string;
+
+  const tagsRaw = formData.get("tags") as string;
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()) : [];
+
   if (selling_price && selling_price < base_price) {
     throw new Error("Selling price must be ≥ base price");
   }
@@ -180,12 +248,32 @@ export async function updateProduct(formData: FormData) {
     description,
     category_id,
     stock,
+
     meta_title: `${name} | Buy Online`,
     meta_description: description?.slice(0, 150),
+
+    /* ✅ NEW */
+    gst_percent,
+    hsn_code,
+
+    manufacturer_name,
+    manufacturer_address,
+    manufacturer_pincode,
+
+    packer_name,
+    packer_address,
+    packer_pincode,
+
+    importer_name,
+    importer_address,
+    importer_pincode,
+
+    country_of_origin,
+    tags,
   };
 
   /* ============================= */
-  /* FILES + LIMIT */
+  /* 📸 IMAGE HANDLING */
   /* ============================= */
   const files = (formData.getAll("images") as File[])
     .filter((f) => f && f.size > 0);
@@ -201,9 +289,6 @@ export async function updateProduct(formData: FormData) {
     throw new Error("Max 5 images allowed");
   }
 
-  /* ============================= */
-  /* COMPRESS + UPLOAD */
-  /* ============================= */
   if (files.length > 0) {
     const uploadPromises = files.map(async (file) => {
       const compressed = await compressImage(file);
