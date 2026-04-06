@@ -8,20 +8,29 @@ export default async function Page() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: products } = await supabase
+  if (!user) return <div>Unauthorized</div>;
+
+  const { data: products, error: pError } = await supabase
     .from("products")
-    .select("*, categories(name)")
-    .eq("seller_id", user?.id)
+    .select(`
+      *,
+      categories(name),
+      product_images(*)
+    `)
+    .eq("seller_id", user.id)
     .order("created_at", { ascending: false });
 
-  const { data: categories } = await supabase
+  const { data: categories, error: cError } = await supabase
     .from("categories")
     .select("*");
 
+  console.log("CATEGORIES:", categories);
+  console.log("ERROR:", cError);
+
   return (
     <ProductsClient
-      products={products}
-      categories={categories}
+      products={products || []}
+      categories={categories || []}
     />
   );
 }

@@ -1,9 +1,54 @@
 "use server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
-// import { generateInvoices } from "./invoice";
 import { redirect } from "next/navigation";
 import { generateSellerInvoice } from "./invoice";
+import sharp from "sharp";
+
+
+
+
+async function compressImage(file: File) {
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const compressedBuffer = await sharp(buffer)
+    .resize(800)
+    .jpeg({ quality: 70 })
+    .toBuffer();
+
+  // ✅ FIX: convert Buffer → Uint8Array
+  const uint8Array = new Uint8Array(compressedBuffer);
+
+  return new File([uint8Array], file.name, {
+    type: "image/jpeg",
+  });
+}
+
+/* ============================= */
+/* 📦 IMAGE UPLOAD HELPER */
+/* ============================= */
+async function uploadImage(file: File) {
+  const supabase = await getSupabaseServer();
+
+  const fileName = `${Date.now()}-${file.name}`;
+
+  const { error } = await supabase.storage
+    .from("products")
+    .upload(fileName, file);
+
+  if (error) {
+    console.error("❌ IMAGE UPLOAD ERROR:", error);
+    throw new Error("Image upload failed");
+  }
+
+  const { data } = supabase.storage
+    .from("products")
+    .getPublicUrl(fileName);
+
+  return data.publicUrl;
+}
+
 /* ============================= */
 /* 📦 CREATE PRODUCT */
 /* ============================= */
@@ -16,20 +61,13 @@ export async function createProduct(formData: FormData) {
 
   if (!user) throw new Error("Unauthorized");
 
-  /* ============================= */
-  /* 📦 BASIC DATA */
-  /* ============================= */
   const name = formData.get("name") as string;
   const base_price = Number(formData.get("base_price"));
   const selling_price = Number(formData.get("selling_price"));
-  const image = formData.get("image") as string;
   const description = formData.get("description") as string;
   const category_id = formData.get("category_id") as string;
   const stock = Number(formData.get("stock"));
 
-  /* ============================= */
-  /* 🛑 VALIDATION */
-  /* ============================= */
   if (!name || !base_price || !category_id) {
     throw new Error("Missing required fields");
   }
@@ -43,19 +81,41 @@ export async function createProduct(formData: FormData) {
   }
 
   /* ============================= */
-  /* 🔗 SEO */
+  /* 🔥 FILES + LIMIT */
+  /* ============================= */
+  const files = (formData.getAll("images") as File[])
+    .filter((f) => f && f.size > 0);
+
+  if (files.length === 0) {
+    throw new Error("At least 1 image is required");
+  }
+
+  if (files.length > 5) {
+    throw new Error("Maximum 5 images allowed");
+  }
+
+  /* ============================= */
+  /* 🔥 COMPRESS + UPLOAD */
+  /* ============================= */
+  const uploadPromises = files.map(async (file) => {
+    const compressed = await compressImage(file);
+    return await uploadImage(compressed);
+  });
+
+  const urls = await Promise.all(uploadPromises);
+
+  const image = urls[0]; // thumbnail
+
+  const imageRows = urls.map((url) => ({ url }));
+
+  /* ============================= */
+  /* CREATE PRODUCT */
   /* ============================= */
   const slug =
     name.toLowerCase().replace(/\s+/g, "-") +
     "-" +
     Math.floor(Math.random() * 1000);
 
-  const meta_title = `${name} | Buy Online`;
-  const meta_description = description?.slice(0, 150);
-
-  /* ============================= */
-  /* 📥 CREATE PRODUCT */
-  /* ============================= */
   const { data: product, error } = await supabase
     .from("products")
     .insert({
@@ -68,76 +128,31 @@ export async function createProduct(formData: FormData) {
       stock,
       seller_id: user.id,
       slug,
-      meta_title,
-      meta_description,
+      meta_title: `${name} | Buy Online`,
+      meta_description: description?.slice(0, 150),
       status: "pending",
     })
     .select()
     .single();
 
-  if (error || !product) {
-    throw new Error("Product creation failed");
-  }
+  if (error || !product) throw new Error("Product creation failed");
 
   /* ============================= */
-  /* 🔥 SAVE ATTRIBUTES */
+  /* SAVE IMAGES */
   /* ============================= */
-  const attributeInserts: any[] = [];
-
-  for (const [key, value] of formData.entries()) {
-    if (key.startsWith("attr_") && value) {
-      attributeInserts.push({
+  const { error: imgError } = await supabase
+    .from("product_images")
+    .insert(
+      imageRows.map((img) => ({
         product_id: product.id,
-        attribute_id: key.replace("attr_", ""),
-        value: value as string,
-      });
-    }
-  }
+        url: img.url,
+      }))
+    );
 
-  if (attributeInserts.length > 0) {
-    await supabase.from("product_attributes").insert(attributeInserts);
-  }
+  if (imgError) throw new Error("Image DB insert failed");
 
-  /* ============================= */
-  /* 🔥 VARIANTS SYSTEM */
-  /* ============================= */
-  const sizes = (formData.get("sizes") as string)?.split(",").map(s => s.trim()).filter(Boolean);
-  const colors = (formData.get("colors") as string)?.split(",").map(c => c.trim()).filter(Boolean);
-
-  const variant_price =
-    Number(formData.get("variant_price")) ||
-    selling_price ||
-    base_price;
-
-  const variant_stock =
-    Number(formData.get("variant_stock")) || 0;
-
-  const variants: any[] = [];
-
-  if (sizes?.length && colors?.length) {
-    for (const size of sizes) {
-      for (const color of colors) {
-        variants.push({
-          product_id: product.id,
-          size,
-          color,
-          price: variant_price,
-          stock: variant_stock,
-        });
-      }
-    }
-  }
-
-  if (variants.length > 0) {
-    await supabase.from("product_variants").insert(variants);
-  }
-
-  /* ============================= */
-  /* 🔄 REDIRECT */
-  /* ============================= */
   redirect("/dashboard/seller/products");
 }
-
 /* ============================= */
 /* ✏️ UPDATE PRODUCT */
 /* ============================= */
@@ -145,38 +160,71 @@ export async function updateProduct(formData: FormData) {
   const supabase = await getSupabaseServer();
 
   const id = formData.get("id") as string;
+  if (!id) throw new Error("Product ID missing");
 
   const name = formData.get("name") as string;
   const base_price = Number(formData.get("base_price"));
   const selling_price = Number(formData.get("selling_price"));
-  const image = formData.get("image") as string;
   const description = formData.get("description") as string;
   const category_id = formData.get("category_id") as string;
   const stock = Number(formData.get("stock"));
-
-  if (!id) throw new Error("Product ID missing");
 
   if (selling_price && selling_price < base_price) {
     throw new Error("Selling price must be ≥ base price");
   }
 
-  const meta_title = `${name} | Buy Online`;
-  const meta_description = description?.slice(0, 150);
+  let updateData: any = {
+    name,
+    base_price,
+    selling_price,
+    description,
+    category_id,
+    stock,
+    meta_title: `${name} | Buy Online`,
+    meta_description: description?.slice(0, 150),
+  };
 
-  await supabase
-    .from("products")
-    .update({
-      name,
-      base_price,
-      selling_price,
-      image,
-      description,
-      category_id,
-      stock,
-      meta_title,
-      meta_description,
-    })
-    .eq("id", id);
+  /* ============================= */
+  /* FILES + LIMIT */
+  /* ============================= */
+  const files = (formData.getAll("images") as File[])
+    .filter((f) => f && f.size > 0);
+
+  const { data: existingImages } = await supabase
+    .from("product_images")
+    .select("id")
+    .eq("product_id", id);
+
+  const existingCount = existingImages?.length || 0;
+
+  if (existingCount + files.length > 5) {
+    throw new Error("Max 5 images allowed");
+  }
+
+  /* ============================= */
+  /* COMPRESS + UPLOAD */
+  /* ============================= */
+  if (files.length > 0) {
+    const uploadPromises = files.map(async (file) => {
+      const compressed = await compressImage(file);
+      return await uploadImage(compressed);
+    });
+
+    const urls = await Promise.all(uploadPromises);
+
+    const imageRows = urls.map((url) => ({
+      product_id: id,
+      url,
+    }));
+
+    await supabase.from("product_images").insert(imageRows);
+
+    updateData.image = urls[0];
+  }
+
+  await supabase.from("products").update(updateData).eq("id", id);
+
+  redirect("/dashboard/seller/products");
 }
 
 /* ============================= */
@@ -184,42 +232,30 @@ export async function updateProduct(formData: FormData) {
 /* ============================= */
 export async function deleteProduct(id: string) {
   const supabase = await getSupabaseServer();
-
   await supabase.from("products").delete().eq("id", id);
 }
 
 /* ============================= */
 /* 🔥 UPDATE ORDER STATUS */
 /* ============================= */
-
-
 export async function updateOrderStatus(
   orderId: string,
   status: string
 ): Promise<void> {
   const supabase = await getSupabaseServer();
 
-  /* ============================= */
-  /* 👤 GET USER */
-  /* ============================= */
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) throw new Error("Unauthorized");
 
-  /* ============================= */
-  /* 🚫 SELLER PERMISSION */
-  /* ============================= */
   if (user.role === "seller") {
     if (!["accepted", "rejected"].includes(status)) {
       throw new Error("Not allowed");
     }
   }
 
-  /* ============================= */
-  /* 🧾 GET ORDER */
-  /* ============================= */
   const { data: order, error } = await supabase
     .from("orders")
     .select("*")
@@ -230,9 +266,6 @@ export async function updateOrderStatus(
     throw new Error("Order not found");
   }
 
-  /* ============================= */
-  /* 🔄 UPDATE STATUS */
-  /* ============================= */
   const updateData: any = { status };
 
   if (status === "delivered") {
@@ -245,29 +278,18 @@ export async function updateOrderStatus(
     .eq("id", orderId);
 
   if (updateError) {
-    console.error("❌ STATUS UPDATE ERROR:", updateError);
+    console.error(updateError);
     throw new Error("Update failed");
   }
 
-  console.log("🔥 STATUS UPDATED:", status);
-
-  /* ============================= */
-  /* 🧾 GENERATE INVOICE */
-  /* ============================= */
   if (status === "accepted") {
-    console.log("🚀 START INVOICE GENERATION");
-
     try {
-      const url = await generateSellerInvoice(orderId);
-      console.log("✅ INVOICE CREATED:", url);
+      await generateSellerInvoice(orderId);
     } catch (err) {
-      console.error("❌ INVOICE FAILED:", err);
+      console.error("Invoice error:", err);
     }
   }
 
-  /* ============================= */
-  /* 💰 PAYOUT (ADMIN ONLY) */
-  /* ============================= */
   if (status === "delivered" && user.role !== "seller") {
     const { data: items } = await supabase
       .from("order_items")
@@ -282,8 +304,6 @@ export async function updateOrderStatus(
     let sellingTotal = 0;
 
     items.forEach((item) => {
-      const sellerId = item.seller_id;
-
       const base =
         Number(item.base_price || 0) * Number(item.quantity || 1);
 
@@ -292,9 +312,10 @@ export async function updateOrderStatus(
 
       sellingTotal += selling;
 
-      if (!sellerId) return;
+      if (!item.seller_id) return;
 
-      sellerMap[sellerId] = (sellerMap[sellerId] || 0) + base;
+      sellerMap[item.seller_id] =
+        (sellerMap[item.seller_id] || 0) + base;
     });
 
     const baseTotal = Object.values(sellerMap).reduce(
@@ -304,7 +325,6 @@ export async function updateOrderStatus(
 
     const margin = sellingTotal - baseTotal;
 
-    /* PAY SELLERS */
     for (const sellerId of Object.keys(sellerMap)) {
       const payout = sellerMap[sellerId];
 
@@ -335,19 +355,16 @@ export async function updateOrderStatus(
       });
     }
 
-    /* RESELLER PROFIT */
     if (margin > 0 && order.reseller_id) {
-      const resellerId = order.reseller_id;
-
       const { data: wallet } = await supabase
         .from("wallets")
         .select("*")
-        .eq("reseller_id", resellerId)
+        .eq("reseller_id", order.reseller_id)
         .maybeSingle();
 
       if (!wallet) {
         await supabase.from("wallets").insert({
-          reseller_id: resellerId,
+          reseller_id: order.reseller_id,
           balance: margin,
         });
       } else {
@@ -356,11 +373,11 @@ export async function updateOrderStatus(
           .update({
             balance: Number(wallet.balance || 0) + margin,
           })
-          .eq("reseller_id", resellerId);
+          .eq("reseller_id", order.reseller_id);
       }
 
       await supabase.from("transactions").insert({
-        reseller_id: resellerId,
+        reseller_id: order.reseller_id,
         amount: margin,
         type: "credit",
       });
@@ -373,7 +390,5 @@ export async function updateOrderStatus(
         seller_payout: baseTotal,
       })
       .eq("id", orderId);
-
-    console.log("✅ PAYOUT DONE");
   }
 }

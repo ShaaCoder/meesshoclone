@@ -9,6 +9,14 @@ import BuyNowButton from "@/components/BuyNowButton";
 export default function ProductClient({ product }: any) {
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
 
+  /* 🔥 MULTIPLE IMAGES */
+  const images =
+    product.product_images?.length > 0
+      ? product.product_images.map((img: any) => img.url)
+      : [product.image || "/placeholder.png"];
+
+  const [selectedImage, setSelectedImage] = useState(images[0]);
+
   const basePrice = Number(product.base_price || 0);
   const price =
     selectedVariant?.price ||
@@ -20,21 +28,21 @@ export default function ProductClient({ product }: any) {
 
   return (
     <div className="bg-gray-50 min-h-screen pb-24">
-
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="grid md:grid-cols-2 gap-10 lg:gap-16">
 
           {/* ================= IMAGE ================= */}
           <div className="space-y-4">
+
+            {/* 🔥 MAIN IMAGE */}
             <div className="relative aspect-square bg-white rounded-3xl overflow-hidden shadow-sm">
               <Image
-                src={product.image || "/placeholder.png"}
+                src={selectedImage}
                 alt={product.name}
                 fill
                 className="object-cover"
               />
 
-              {/* 🔥 DISCOUNT BADGE */}
               {discount > 5 && (
                 <div className="absolute top-4 left-4 bg-red-500 text-white text-sm px-3 py-1 rounded-xl shadow">
                   {discount}% OFF
@@ -42,7 +50,23 @@ export default function ProductClient({ product }: any) {
               )}
             </div>
 
-            {/* 💡 TRUST BADGES */}
+            {/* 🔥 THUMBNAILS */}
+            <div className="flex gap-3 overflow-x-auto">
+              {images.map((img: string, i: number) => (
+                <img
+                  key={i}
+                  src={img}
+                  onClick={() => setSelectedImage(img)}
+                  className={`h-20 w-20 object-cover rounded cursor-pointer border-2 transition ${
+                    selectedImage === img
+                      ? "border-black"
+                      : "border-transparent"
+                  }`}
+                />
+              ))}
+            </div>
+
+            {/* TRUST BADGES */}
             <div className="flex gap-4 text-xs text-gray-500">
               <span>🚚 Free Delivery</span>
               <span>💵 COD Available</span>
@@ -53,12 +77,10 @@ export default function ProductClient({ product }: any) {
           {/* ================= DETAILS ================= */}
           <div className="space-y-6">
 
-            {/* TITLE */}
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
               {product.name}
             </h1>
 
-            {/* ⭐ RATING */}
             <div className="flex items-center gap-2 text-sm">
               <span className="bg-green-600 text-white px-2 py-0.5 rounded text-xs">
                 4.4 ★
@@ -66,7 +88,6 @@ export default function ProductClient({ product }: any) {
               <span className="text-gray-500">(1,245 reviews)</span>
             </div>
 
-            {/* 💰 PRICE SECTION */}
             <div className="space-y-1">
               <div className="flex items-center gap-3">
                 <span className="text-3xl font-bold text-black">
@@ -83,59 +104,53 @@ export default function ProductClient({ product }: any) {
               </p>
             </div>
 
-            {/* 🔥 URGENCY */}
             <div className="bg-yellow-50 border border-yellow-200 text-sm px-4 py-2 rounded-xl w-fit">
               🔥 Only few items left in stock!
             </div>
 
-            {/* 📦 DESCRIPTION */}
             <p className="text-gray-600 leading-relaxed">
               {product.description}
             </p>
-              {/* 🏭 MANUFACTURER DETAILS */}
-<div className="bg-white border rounded-2xl p-4">
-  <h3 className="font-semibold mb-3">Manufacturer Details</h3>
 
-  <div className="space-y-2 text-sm">
-    <div className="flex justify-between">
-      <span className="text-gray-500">Manufacturer</span>
-      <span className="font-medium">{product.manufacturer_name}</span>
-    </div>
+            {/* MANUFACTURER */}
+            <div className="bg-white border rounded-2xl p-4">
+              <h3 className="font-semibold mb-3">Manufacturer Details</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Manufacturer</span>
+                  <span>{product.manufacturer_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Address</span>
+                  <span>{product.manufacturer_address}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Pincode</span>
+                  <span>{product.manufacturer_pincode}</span>
+                </div>
+              </div>
+            </div>
 
-    <div className="flex justify-between">
-      <span className="text-gray-500">Address</span>
-      <span className="font-medium">{product.manufacturer_address}</span>
-    </div>
+            {/* PRODUCT INFO */}
+            <div className="bg-white border rounded-2xl p-4">
+              <h3 className="font-semibold mb-3">Product Information</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Country</span>
+                  <span>{product.country_of_origin}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">GST</span>
+                  <span>{product.gst_percent}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">HSN Code</span>
+                  <span>{product.hsn_code}</span>
+                </div>
+              </div>
+            </div>
 
-    <div className="flex justify-between">
-      <span className="text-gray-500">Pincode</span>
-      <span className="font-medium">{product.manufacturer_pincode}</span>
-    </div>
-  </div>
-</div>
-
-{/* 📦 PRODUCT INFO */}
-<div className="bg-white border rounded-2xl p-4">
-  <h3 className="font-semibold mb-3">Product Information</h3>
-
-  <div className="space-y-2 text-sm">
-    <div className="flex justify-between">
-      <span className="text-gray-500">Country</span>
-      <span className="font-medium">{product.country_of_origin}</span>
-    </div>
-
-    <div className="flex justify-between">
-      <span className="text-gray-500">GST</span>
-      <span className="font-medium">{product.gst_percent}%</span>
-    </div>
-
-    <div className="flex justify-between">
-      <span className="text-gray-500">HSN Code</span>
-      <span className="font-medium">{product.hsn_code}</span>
-    </div>
-  </div>
-</div>
-            {/* 🎯 VARIANTS */}
+            {/* VARIANTS */}
             {product.product_variants?.length > 0 && (
               <div>
                 <h3 className="font-semibold mb-2">Select Option</h3>
@@ -146,38 +161,35 @@ export default function ProductClient({ product }: any) {
               </div>
             )}
 
-            {/* 📋 ATTRIBUTES */}
+            {/* ATTRIBUTES */}
             {product.product_attributes?.length > 0 && (
               <div className="bg-white border rounded-2xl p-4">
                 <h3 className="font-semibold mb-3">Product Details</h3>
-
                 <div className="space-y-2 text-sm">
                   {product.product_attributes.map((attr: any) => (
                     <div key={attr.attributes.name} className="flex justify-between">
                       <span className="text-gray-500">
                         {attr.attributes.name}
                       </span>
-                      <span className="font-medium">
-                        {attr.value}
-                      </span>
+                      <span>{attr.value}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* 🚀 ACTION BUTTONS */}
+            {/* ACTION BUTTONS */}
             <div className="flex flex-col gap-3 pt-4">
 
               <AddToCartButton
                 productId={product.id}
                 variantId={selectedVariant?.id}
-                className="w-full py-4 text-lg bg-black text-white rounded-xl hover:scale-105 transition"
+                className="w-full py-4 text-lg bg-black text-white rounded-xl"
               />
 
               <BuyNowButton
                 productId={product.id}
-                className="w-full py-4 text-lg bg-yellow-400 text-black rounded-xl font-semibold hover:scale-105 transition"
+                className="w-full py-4 text-lg bg-yellow-400 text-black rounded-xl font-semibold"
               />
 
             </div>
@@ -186,7 +198,7 @@ export default function ProductClient({ product }: any) {
         </div>
       </div>
 
-      {/* ================= MOBILE STICKY BAR ================= */}
+      {/* MOBILE BAR */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-3 flex gap-3 md:hidden z-50">
         <button className="flex-1 border rounded-xl py-3">
           Add to Cart
@@ -195,7 +207,6 @@ export default function ProductClient({ product }: any) {
           Buy Now
         </button>
       </div>
-
     </div>
   );
 }

@@ -10,17 +10,25 @@ import ReviewsList from "@/components/ReviewsList";
 /* ============================= */
 
 export async function generateMetadata({ params }: any) {
-  const { slug } = await params;
+  const { slug } = await params; // ✅ FIX (Next.js 15)
 
   const supabase = await getSupabaseServer();
 
   const { data: product } = await supabase
     .from("products")
-    .select("*")
+    .select(`
+      *,
+      product_images(*)
+    `)
     .eq("slug", slug)
     .single();
 
   if (!product) return {};
+
+  const images =
+    product.product_images?.length > 0
+      ? product.product_images.map((img: any) => img.url)
+      : [product.image];
 
   return {
     title: product.meta_title || product.name,
@@ -29,14 +37,14 @@ export async function generateMetadata({ params }: any) {
     openGraph: {
       title: product.name,
       description: product.meta_description,
-      images: [product.image],
+      images,
     },
 
     twitter: {
       card: "summary_large_image",
       title: product.name,
       description: product.meta_description,
-      images: [product.image],
+      images,
     },
   };
 }
@@ -46,21 +54,22 @@ export async function generateMetadata({ params }: any) {
 /* ============================= */
 
 export default async function ProductPage({ params }: any) {
-  const { slug } = await params;
+  const { slug } = await params; // ✅ FIX
 
   const supabase = await getSupabaseServer();
 
   /* ============================= */
-  /* 📦 FETCH PRODUCT */
+  /* 📦 FETCH PRODUCT (🔥 FIXED) */
   /* ============================= */
 
-  const { data: product, error } = await supabase
-    .from("products")
-    .select(`
-      *,
-      product_variants(*),
-      product_attributes(value, attributes(name))
-    `)
+ const { data: product, error } = await supabase
+  .from("products")
+  .select(`
+    *,
+    product_images(*),
+    product_variants(*),
+    product_attributes(value, attributes(name))
+  `)
     .eq("slug", slug)
     .eq("status", "approved")
     .single();
@@ -68,7 +77,7 @@ export default async function ProductPage({ params }: any) {
   if (error || !product) return notFound();
 
   /* ============================= */
-  /* 🔥 FETCH SIMILAR PRODUCTS */
+  /* 🔥 SIMILAR PRODUCTS */
   /* ============================= */
 
   const { data: similarProducts } = await supabase
@@ -80,7 +89,7 @@ export default async function ProductPage({ params }: any) {
     .limit(10);
 
   /* ============================= */
-  /* ⭐ FETCH REVIEWS */
+  /* ⭐ REVIEWS */
   /* ============================= */
 
   const { data: reviews } = await supabase
@@ -92,10 +101,6 @@ export default async function ProductPage({ params }: any) {
     .eq("product_id", product.id)
     .order("created_at", { ascending: false });
 
-  /* ============================= */
-  /* ⭐ AVERAGE RATING */
-  /* ============================= */
-
   const avgRating =
     reviews?.length
       ? reviews.reduce((acc: number, r: any) => acc + r.rating, 0) /
@@ -103,12 +108,21 @@ export default async function ProductPage({ params }: any) {
       : 0;
 
   /* ============================= */
-  /* 🚀 PAGE UI */
+  /* 🔥 IMAGE ARRAY */
+  /* ============================= */
+
+  const images =
+    product.product_images?.length > 0
+      ? product.product_images.map((img: any) => img.url)
+      : [product.image];
+
+  /* ============================= */
+  /* 🚀 UI */
   /* ============================= */
 
   return (
     <>
-      {/* 🔥 STRUCTURED DATA (SEO BOOST) */}
+      {/* 🔥 STRUCTURED DATA */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -116,7 +130,7 @@ export default async function ProductPage({ params }: any) {
             "@context": "https://schema.org/",
             "@type": "Product",
             name: product.name,
-            image: product.image,
+            image: images, // ✅ MULTIPLE IMAGES
             description: product.description,
             brand: {
               "@type": "Brand",
@@ -142,23 +156,20 @@ export default async function ProductPage({ params }: any) {
       {/* 🛍️ PRODUCT */}
       <ProductClient product={product} />
 
-      {/* ⭐ REVIEWS SECTION */}
+      {/* ⭐ REVIEWS */}
       <div className="max-w-4xl mx-auto px-6 mt-16 space-y-10">
-        
-        {/* ⭐ AVG RATING */}
+
         <div>
           <h2 className="text-2xl font-bold">
             ⭐ {avgRating.toFixed(1)} ({reviews?.length || 0} reviews)
           </h2>
         </div>
 
-        {/* ✍️ ADD REVIEW */}
         <div>
           <h3 className="text-xl font-semibold mb-4">Write a Review</h3>
           <ReviewForm productId={product.id} />
         </div>
 
-        {/* 📢 REVIEWS LIST */}
         <div>
           <h3 className="text-xl font-semibold mb-4">Customer Reviews</h3>
           <ReviewsList reviews={reviews} />
