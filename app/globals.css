@@ -1,42 +1,70 @@
 @import "tailwindcss";
 
+/* ============================= */
+/* 🎨 DESIGN SYSTEM (BLUE THEME) */
+/* ============================= */
+html {
+  color-scheme: light;
+}
 :root {
-  --primary: #2563eb;   /* Blue */
+  --primary: #2563eb;        /* Blue */
   --primary-dark: #1d4ed8;
-  --background: #ffffff; 
+  --secondary: #3b82f6;
+
+  --background: #ffffff;     /* ALWAYS WHITE */
   --foreground: #111827;
-}
-/* 🌙 DARK MODE (optional) */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f172a;
-    --foreground: #e5e7eb;
-  }
+
+  --border: #e5e7eb;
+  --input-bg: #ffffff;
 }
 
-/* 🧠 BASE STYLES */
+/* ❌ REMOVE DARK MODE COMPLETELY */
+/* NO prefers-color-scheme */
+
+/* ============================= */
+/* 🧠 BASE RESET */
+/* ============================= */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  background: #ffffff; /* FORCE WHITE */
+  color: #111827;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* 🔥 BETTER INPUT STYLING */
+/* ============================= */
+/* ✨ INPUTS (CONSISTENT) */
+/* ============================= */
+
 input,
 textarea,
 select {
-  outline: none;
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   transition: all 0.2s ease;
+  font-family: inherit;
 }
 
+/* Focus (BLUE) */
 input:focus,
 textarea:focus,
 select:focus {
-  border-color: #000;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  outline: none;
 }
 
-/* 🔥 BUTTON SMOOTH */
+/* ============================= */
+/* 🔥 BUTTON SYSTEM */
+/* ============================= */
+
 button {
   transition: all 0.2s ease;
 }
@@ -44,63 +72,63 @@ button {
 button:hover {
   transform: translateY(-1px);
 }
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* ============================= */
+/* 🧩 INPUT CLASS */
+/* ============================= */
+
 .input {
-  width: 100%;
-  border: 1px solid #ddd;
-  padding: 10px;
-  border-radius: 8px;
+  @apply w-full px-4 py-3 rounded-xl text-sm border border-gray-300 bg-white;
 }
 
-/* 🔵 SIMPLE BLUE HEADER OVERRIDE */
-header {
-  background: #2563eb !important;
-  color: white !important;
+/* ============================= */
+/* 🎯 CARD SYSTEM */
+/* ============================= */
+
+.card {
+  @apply bg-white rounded-2xl shadow-md border p-6;
 }
 
-header input {
-  background: white !important;
-  color: black !important;
-  border-radius: 6px;
-  padding: 8px 12px;
+/* ============================= */
+/* 🔵 BLUE GRADIENT */
+/* ============================= */
+
+.gradient-primary {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
 }
 
-header input::placeholder {
-  color: #6b7280;
-}
+/* ============================= */
+/* 🎬 ANIMATIONS */
+/* ============================= */
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fade-in {
-  animation: fade-in 0.8s ease-out forwards;
+  animation: fade-in 0.6s ease-out forwards;
 }
 
-.animate-fade-in-delay {
-  animation: fade-in 0.8s ease-out 0.3s forwards;
-  opacity: 0;
+/* ============================= */
+/* ✅ SCROLLBAR */
+/* ============================= */
+
+::-webkit-scrollbar {
+  width: 6px;
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-25px); }
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
-}
-
-.animate-float-delay {
-  animation: float 7s ease-in-out 1.5s infinite;
-}
-
-.animate-float-slow {
-  animation: float 9s ease-in-out 3s infinite;
-}
-
-/* Subtle background drift */
-@keyframes drift {
-  from { background-position: 0 0; }
-  to { background-position: 100px 100px; }
+::-webkit-scrollbar-thumb {
+  background: #cbd5f5;
+  border-radius: 10px;
 }

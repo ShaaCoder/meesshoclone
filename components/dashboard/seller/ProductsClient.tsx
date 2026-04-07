@@ -1,12 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   updateProduct,
   deleteProduct,
   createProduct,
 } from "@/app/actions/seller";
+import { getGSTHSN } from "@/app/actions/tax";
 import DynamicAttributes from "@/components/DynamicAttributes";
+
+/* ============================= */
+/* 🔁 DEBOUNCE HOOK */
+/* ============================= */
+function useDebounce(value: string, delay: number) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+
+  return debounced;
+}
 
 /* ============================= */
 /* ✏️ EDIT FORM COMPONENT */
@@ -14,6 +29,22 @@ import DynamicAttributes from "@/components/DynamicAttributes";
 function EditProductForm({ product, categories, onClose }: any) {
   const [categoryId, setCategoryId] = useState(product.category_id);
   const [preview, setPreview] = useState<string[]>([]);
+  const [productName, setProductName] = useState(product.name);
+  const [gst, setGst] = useState(product.gst_percent || "");
+  const [hsn, setHsn] = useState(product.hsn_code || "");
+
+  const debouncedName = useDebounce(productName, 500);
+
+  useEffect(() => {
+    const fetchTax = async () => {
+      if (categoryId && debouncedName.length > 2) {
+        const res = await getGSTHSN(categoryId, debouncedName);
+        if (res.gst) setGst(res.gst);
+        if (res.hsn) setHsn(res.hsn);
+      }
+    };
+    fetchTax();
+  }, [debouncedName, categoryId]);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -25,7 +56,12 @@ function EditProductForm({ product, categories, onClose }: any) {
 
           <input type="hidden" name="id" value={product.id} />
 
-          <input name="name" defaultValue={product.name} className="border p-2 rounded" />
+          <input
+            name="name"
+            value={productName}
+            onChange={(e) => setProductName(e.target.value)}
+            className="border p-2 rounded"
+          />
 
           <select
             name="category_id"
@@ -65,41 +101,31 @@ function EditProductForm({ product, categories, onClose }: any) {
 
           <textarea name="description" defaultValue={product.description} className="border p-2 rounded md:col-span-2" />
 
-          {/* ================= PRODUCT DETAILS ================= */}
+          {/* PRODUCT DETAILS */}
           <div className="md:col-span-2 border p-4 rounded space-y-3">
             <h3 className="font-semibold">Product Details</h3>
 
-            <input name="gst_percent" type="number" defaultValue={product.gst_percent} className="border p-2 w-full rounded" />
-            <input name="hsn_code" defaultValue={product.hsn_code} className="border p-2 w-full rounded" />
+            <p className="text-xs text-gray-500">
+              Auto detected GST & HSN (you can edit)
+            </p>
+
+            <input
+              name="gst_percent"
+              type="number"
+              value={gst}
+              onChange={(e) => setGst(e.target.value)}
+              className="border p-2 w-full rounded"
+            />
+
+            <input
+              name="hsn_code"
+              value={hsn}
+              onChange={(e) => setHsn(e.target.value)}
+              className="border p-2 w-full rounded"
+            />
+
             <input name="country_of_origin" defaultValue={product.country_of_origin} className="border p-2 w-full rounded" />
             <input name="tags" defaultValue={product.tags?.join(",")} className="border p-2 w-full rounded" />
-          </div>
-
-          {/* ================= MANUFACTURER ================= */}
-          <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Manufacturer</h3>
-
-            <input name="manufacturer_name" defaultValue={product.manufacturer_name} className="border p-2 w-full rounded" />
-            <input name="manufacturer_address" defaultValue={product.manufacturer_address} className="border p-2 w-full rounded" />
-            <input name="manufacturer_pincode" defaultValue={product.manufacturer_pincode} className="border p-2 w-full rounded" />
-          </div>
-
-          {/* ================= PACKER ================= */}
-          <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Packer</h3>
-
-            <input name="packer_name" defaultValue={product.packer_name} className="border p-2 w-full rounded" />
-            <input name="packer_address" defaultValue={product.packer_address} className="border p-2 w-full rounded" />
-            <input name="packer_pincode" defaultValue={product.packer_pincode} className="border p-2 w-full rounded" />
-          </div>
-
-          {/* ================= IMPORTER ================= */}
-          <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Importer</h3>
-
-            <input name="importer_name" defaultValue={product.importer_name} className="border p-2 w-full rounded" />
-            <input name="importer_address" defaultValue={product.importer_address} className="border p-2 w-full rounded" />
-            <input name="importer_pincode" defaultValue={product.importer_pincode} className="border p-2 w-full rounded" />
           </div>
 
           <DynamicAttributes categoryId={categoryId} />
@@ -125,17 +151,41 @@ export default function ProductsClient({ products, categories }: any) {
   const [preview, setPreview] = useState<string[]>([]);
   const [editingProduct, setEditingProduct] = useState<any>(null);
 
+  const [productName, setProductName] = useState("");
+  const [gst, setGst] = useState("");
+  const [hsn, setHsn] = useState("");
+
+  const debouncedName = useDebounce(productName, 500);
+
+  useEffect(() => {
+    const fetchTax = async () => {
+      if (categoryId && debouncedName.length > 2) {
+        const res = await getGSTHSN(categoryId, debouncedName);
+     if (res.gst) setGst(String(res.gst));
+if (res.hsn) setHsn(String(res.hsn));
+      }
+    };
+    fetchTax();
+  }, [debouncedName, categoryId]);
+
   return (
     <div className="space-y-6 text-black">
       <h1 className="text-2xl font-bold">Your Products</h1>
 
-      {/* ================= ADD PRODUCT ================= */}
+      {/* ADD PRODUCT */}
       <div className="bg-white p-6 rounded-xl shadow">
         <h2 className="text-xl font-semibold mb-4">Add Product</h2>
 
         <form action={createProduct} className="grid md:grid-cols-2 gap-4">
 
-          <input name="name" placeholder="Product Name" required className="border p-2 rounded" />
+          <input
+            name="name"
+            placeholder="Product Name"
+            value={productName}
+            onChange={(e) => setProductName(e.target.value)}
+            required
+            className="border p-2 rounded"
+          />
 
           <select
             name="category_id"
@@ -181,37 +231,27 @@ export default function ProductsClient({ products, categories }: any) {
           <div className="md:col-span-2 border p-4 rounded space-y-3">
             <h3 className="font-semibold">Product Details</h3>
 
-            <input name="gst_percent" type="number" placeholder="GST %" className="border p-2 w-full rounded" />
-            <input name="hsn_code" placeholder="HSN Code" className="border p-2 w-full rounded" />
+            <p className="text-xs text-gray-500">
+              Auto detected GST & HSN (you can edit)
+            </p>
+
+            <input
+              name="gst_percent"
+              type="number"
+              value={gst}
+              onChange={(e) => setGst(e.target.value)}
+              className="border p-2 w-full rounded"
+            />
+
+            <input
+              name="hsn_code"
+              value={hsn}
+              onChange={(e) => setHsn(e.target.value)}
+              className="border p-2 w-full rounded"
+            />
+
             <input name="country_of_origin" placeholder="Country of Origin" className="border p-2 w-full rounded" />
             <input name="tags" placeholder="Tags (comma separated)" className="border p-2 w-full rounded" />
-          </div>
-
-          {/* MANUFACTURER */}
-          <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Manufacturer</h3>
-
-            <input name="manufacturer_name" placeholder="Name" className="border p-2 w-full rounded" />
-            <input name="manufacturer_address" placeholder="Address" className="border p-2 w-full rounded" />
-            <input name="manufacturer_pincode" placeholder="Pincode" className="border p-2 w-full rounded" />
-          </div>
-
-          {/* PACKER */}
-          <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Packer</h3>
-
-            <input name="packer_name" placeholder="Name" className="border p-2 w-full rounded" />
-            <input name="packer_address" placeholder="Address" className="border p-2 w-full rounded" />
-            <input name="packer_pincode" placeholder="Pincode" className="border p-2 w-full rounded" />
-          </div>
-
-          {/* IMPORTER */}
-          <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Importer</h3>
-
-            <input name="importer_name" placeholder="Name" className="border p-2 w-full rounded" />
-            <input name="importer_address" placeholder="Address" className="border p-2 w-full rounded" />
-            <input name="importer_pincode" placeholder="Pincode" className="border p-2 w-full rounded" />
           </div>
 
           <DynamicAttributes categoryId={categoryId} />
