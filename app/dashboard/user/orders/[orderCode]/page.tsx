@@ -8,12 +8,15 @@ import {
 } from "lucide-react";
 
 export default async function OrderDetails({ params }: any) {
-const { orderCode } = await params;
+  const { orderCode } = await params;
 
   type OrderStatus = "placed" | "processing" | "shipped" | "delivered";
 
   const supabase = await getSupabaseServer();
 
+  /* ============================= */
+  /* 📦 ORDER */
+  /* ============================= */
   const { data: order } = await supabase
     .from("orders")
     .select("*")
@@ -22,12 +25,20 @@ const { orderCode } = await params;
 
   if (!order) return notFound();
 
+  /* ============================= */
+  /* 📦 ITEMS */
+  /* ============================= */
   const { data: items } = await supabase
     .from("order_items")
-    .select("*, products(*)")
+    .select(`
+      *,
+      products(name, image)
+    `)
     .eq("order_id", order.id);
 
-  // 🔥 Timeline logic
+  /* ============================= */
+  /* 🚚 STATUS */
+  /* ============================= */
   const steps = [
     { label: "Order Placed", icon: Clock },
     { label: "Processing", icon: Package },
@@ -45,6 +56,10 @@ const { orderCode } = await params;
   const currentStep =
     statusMap[(order.status as OrderStatus) || "placed"];
 
+  /* ============================= */
+  /* 🚀 UI */
+  /* ============================= */
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-8">
 
@@ -61,7 +76,7 @@ const { orderCode } = await params;
         </div>
       </div>
 
-      {/* 🚚 TRACKING SECTION */}
+      {/* 🚚 TRACKING */}
       <div className="bg-white p-6 rounded-2xl shadow space-y-4">
         <h2 className="font-semibold">Shipping Details</h2>
 
@@ -79,12 +94,16 @@ const { orderCode } = await params;
             </a>
 
             {order.shipped_at && (
-              <p>Shipped on: {new Date(order.shipped_at).toLocaleDateString()}</p>
+              <p>
+                Shipped on:{" "}
+                {new Date(order.shipped_at).toLocaleDateString()}
+              </p>
             )}
 
             {order.delivered_at && (
               <p className="text-green-600">
-                Delivered on: {new Date(order.delivered_at).toLocaleDateString()}
+                Delivered on:{" "}
+                {new Date(order.delivered_at).toLocaleDateString()}
               </p>
             )}
           </div>
@@ -93,7 +112,7 @@ const { orderCode } = await params;
         )}
       </div>
 
-      {/* 📦 STATUS TIMELINE */}
+      {/* 📦 STATUS */}
       <div className="bg-white p-6 rounded-2xl shadow">
         <h2 className="font-semibold mb-6">Order Status</h2>
 
@@ -160,21 +179,24 @@ const { orderCode } = await params;
             className="flex gap-4 border p-4 rounded-xl hover:shadow transition"
           >
             <img
-              src={item.products.image}
+              src={item.products?.image || "/placeholder.png"}
               className="w-24 h-24 object-cover rounded-lg"
             />
 
             <div className="flex-1">
               <h3 className="font-bold">
-                {item.products.name}
+                {item.products?.name}
               </h3>
+
+              {/* ✅ FIXED */}
               <p className="text-gray-500">
-                ₹{item.base_price} × {item.quantity}
+                ₹{item.price} × {item.quantity}
               </p>
             </div>
 
+            {/* ✅ FIXED */}
             <div className="font-semibold">
-              ₹{item.base_price * item.quantity}
+              ₹{item.price * item.quantity}
             </div>
           </div>
         ))}

@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   turbopack: {
-    root: "C:/Users/shaan/OneDrive/Desktop/meeho/meeshocopy",
+    root: "C:/Users/shaan/OneDrive/Desktop/yourshop/meeshocopy",
   },
 
   images: {
@@ -22,6 +22,10 @@ const nextConfig = {
       {
         protocol: "https",
         hostname: "images.pexels.com",
+      }, 
+      {
+        protocol: "https",
+        hostname: "example.com",
       },
     ],
   },

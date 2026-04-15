@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase-server";
+import InvoicesClient from "@/components/dashboard/seller/InvoicesClient";
 
 export default async function SellerInvoicesPage() {
   const supabase = await getSupabaseServer();
@@ -7,9 +8,7 @@ export default async function SellerInvoicesPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    return <div>Please login</div>;
-  }
+  if (!user) return null;
 
   const { data: invoices } = await supabase
     .from("invoices")
@@ -18,34 +17,12 @@ export default async function SellerInvoicesPage() {
     .order("created_at", { ascending: false });
 
   return (
-    <div className="p-6 space-y-4 text-black">
-      <h1 className="text-2xl font-bold">Invoices</h1>
+    <div className="p-6 text-white">
+      <h1 className="text-2xl font-bold mb-6">
+        Invoices
+      </h1>
 
-      {invoices?.length === 0 && (
-        <p className="text-gray-500">No invoices yet</p>
-      )}
-
-      {invoices?.map((inv) => (
-        <div
-          key={inv.id}
-          className="border p-4 rounded flex justify-between items-center"
-        >
-          <div>
-            <p className="font-semibold">{inv.invoice_number}</p>
-            <p className="text-sm text-gray-500">
-              ₹{inv.amount}
-            </p>
-          </div>
-
-          <a
-            href={inv.pdf_url}
-            target="_blank"
-            className="bg-black text-white px-4 py-2 rounded"
-          >
-            Download
-          </a>
-        </div>
-      ))}
+      <InvoicesClient invoices={invoices || []} />
     </div>
   );
 }

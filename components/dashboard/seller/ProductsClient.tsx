@@ -1,304 +1,451 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useTransition } from "react";
 import {
-  updateProduct,
-  deleteProduct,
   createProduct,
+  deleteProduct,
+  updateProduct,
 } from "@/app/actions/seller";
-import { getGSTHSN } from "@/app/actions/tax";
-import DynamicAttributes from "@/components/DynamicAttributes";
 
 /* ============================= */
-/* 🔁 DEBOUNCE HOOK */
+/* TYPES */
 /* ============================= */
-function useDebounce(value: string, delay: number) {
-  const [debounced, setDebounced] = useState(value);
 
-  useEffect(() => {
-    const handler = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-
-  return debounced;
-}
+type Variant = {
+  size: string;
+  color: string;
+  price: string;
+  mrp: string;
+  stock: string;
+};
 
 /* ============================= */
-/* ✏️ EDIT FORM COMPONENT */
+/* 🖼 IMAGE UPLOAD */
 /* ============================= */
-function EditProductForm({ product, categories, onClose }: any) {
-  const [categoryId, setCategoryId] = useState(product.category_id);
-  const [preview, setPreview] = useState<string[]>([]);
-  const [productName, setProductName] = useState(product.name);
-  const [gst, setGst] = useState(product.gst_percent || "");
-  const [hsn, setHsn] = useState(product.hsn_code || "");
 
-  const debouncedName = useDebounce(productName, 500);
+function ImageUpload({
+  files,
+  setFiles,
+}: {
+  files: File[];
+  setFiles: React.Dispatch<React.SetStateAction<File[]>>;
+}) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList) return;
 
-  useEffect(() => {
-    const fetchTax = async () => {
-      if (categoryId && debouncedName.length > 2) {
-        const res = await getGSTHSN(categoryId, debouncedName);
-        if (res.gst) setGst(res.gst);
-        if (res.hsn) setHsn(res.hsn);
-      }
-    };
-    fetchTax();
-  }, [debouncedName, categoryId]);
+    const selected: File[] = Array.from(fileList);
+    setFiles((prev) => [...prev, ...selected]);
+  };
+
+  const removeImage = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white w-full max-w-2xl p-6 rounded-xl space-y-4 max-h-[90vh] overflow-y-auto">
+    <div className="space-y-2">
+      <input
+        type="file"
+        multiple
+        accept="image/*"
+        onChange={handleChange}
+        className="border p-2 w-full"
+      />
 
-        <h2 className="text-xl font-bold">Edit Product</h2>
-
-        <form action={updateProduct} className="grid md:grid-cols-2 gap-4">
-
-          <input type="hidden" name="id" value={product.id} />
-
-          <input
-            name="name"
-            value={productName}
-            onChange={(e) => setProductName(e.target.value)}
-            className="border p-2 rounded"
-          />
-
-          <select
-            name="category_id"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            className="border p-2 rounded"
-          >
-            {categories.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-
-          <input name="base_price" type="number" defaultValue={product.base_price} className="border p-2 rounded" />
-          <input name="selling_price" type="number" defaultValue={product.selling_price} className="border p-2 rounded" />
-          <input name="stock" type="number" defaultValue={product.stock} className="border p-2 rounded" />
-
-          {/* IMAGE */}
-          <div className="space-y-2 md:col-span-2">
-            <input
-              type="file"
-              name="images"
-              multiple
-              accept="image/*"
-              className="border p-2 rounded w-full"
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                setPreview(files.map((f) => URL.createObjectURL(f)));
-              }}
+      <div className="flex gap-3 flex-wrap">
+        {files.map((file, i) => (
+          <div key={i} className="relative">
+            <img
+              src={URL.createObjectURL(file)}
+              className="h-20 w-20 object-cover rounded"
             />
-
-            <div className="flex gap-2 flex-wrap">
-              {preview.map((src, i) => (
-                <img key={i} src={src} className="h-16 w-16 rounded" />
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => removeImage(i)}
+              className="absolute top-0 right-0 bg-red-500 text-white text-xs px-1"
+            >
+              ✕
+            </button>
           </div>
-
-          <textarea name="description" defaultValue={product.description} className="border p-2 rounded md:col-span-2" />
-
-          {/* PRODUCT DETAILS */}
-          <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Product Details</h3>
-
-            <p className="text-xs text-gray-500">
-              Auto detected GST & HSN (you can edit)
-            </p>
-
-            <input
-              name="gst_percent"
-              type="number"
-              value={gst}
-              onChange={(e) => setGst(e.target.value)}
-              className="border p-2 w-full rounded"
-            />
-
-            <input
-              name="hsn_code"
-              value={hsn}
-              onChange={(e) => setHsn(e.target.value)}
-              className="border p-2 w-full rounded"
-            />
-
-            <input name="country_of_origin" defaultValue={product.country_of_origin} className="border p-2 w-full rounded" />
-            <input name="tags" defaultValue={product.tags?.join(",")} className="border p-2 w-full rounded" />
-          </div>
-
-          <DynamicAttributes categoryId={categoryId} />
-
-          <button className="bg-black text-white py-2 rounded md:col-span-2">
-            Update Product
-          </button>
-        </form>
-
-        <button onClick={onClose} className="text-red-500 text-sm">
-          Close
-        </button>
+        ))}
       </div>
     </div>
   );
 }
 
 /* ============================= */
-/* 🛍 MAIN COMPONENT */
+/* 🔥 VARIANTS */
 /* ============================= */
-export default function ProductsClient({ products, categories }: any) {
-  const [categoryId, setCategoryId] = useState("");
-  const [preview, setPreview] = useState<string[]>([]);
-  const [editingProduct, setEditingProduct] = useState<any>(null);
 
-  const [productName, setProductName] = useState("");
-  const [gst, setGst] = useState("");
-  const [hsn, setHsn] = useState("");
+function VariantGenerator({
+  variants,
+  setVariants,
+}: {
+  variants: Variant[];
+  setVariants: (v: Variant[]) => void;
+}) {
+  const sizesList = ["S", "M", "L", "XL", "XXL"];
 
-  const debouncedName = useDebounce(productName, 500);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [colors, setColors] = useState<string[]>([]);
+  const [colorInput, setColorInput] = useState("");
 
-  useEffect(() => {
-    const fetchTax = async () => {
-      if (categoryId && debouncedName.length > 2) {
-        const res = await getGSTHSN(categoryId, debouncedName);
-     if (res.gst) setGst(String(res.gst));
-if (res.hsn) setHsn(String(res.hsn));
-      }
-    };
-    fetchTax();
-  }, [debouncedName, categoryId]);
+  const generateVariants = () => {
+    const newVariants: Variant[] = [];
+
+    selectedSizes.forEach((size) => {
+      colors.forEach((color) => {
+        newVariants.push({ size, color, price: "", mrp: "", stock: "" });
+      });
+    });
+
+    setVariants(newVariants);
+  };
+
+  const updateVariant = (i: number, field: keyof Variant, value: string) => {
+    const updated = [...variants];
+    updated[i][field] = value;
+    setVariants(updated);
+  };
 
   return (
-    <div className="space-y-6 text-black">
-      <h1 className="text-2xl font-bold">Your Products</h1>
+    <div className="border p-4 rounded-xl space-y-3">
+      <p className="font-semibold">Variants</p>
 
-      {/* ADD PRODUCT */}
-      <div className="bg-white p-6 rounded-xl shadow">
-        <h2 className="text-xl font-semibold mb-4">Add Product</h2>
+      <div className="flex gap-2 flex-wrap">
+        {sizesList.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() =>
+              setSelectedSizes((prev) =>
+                prev.includes(s)
+                  ? prev.filter((x) => x !== s)
+                  : [...prev, s]
+              )
+            }
+            className={`px-3 py-1 rounded ${
+              selectedSizes.includes(s)
+                ? "bg-black text-white"
+                : "border"
+            }`}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
 
-        <form action={createProduct} className="grid md:grid-cols-2 gap-4">
+      <div className="flex gap-2">
+        <input
+          value={colorInput}
+          onChange={(e) => setColorInput(e.target.value)}
+          placeholder="Add color"
+          className="border px-2 py-1 flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (colorInput) {
+              setColors([...colors, colorInput]);
+              setColorInput("");
+            }
+          }}
+          className="px-3 py-1 bg-black text-white rounded"
+        >
+          Add
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={generateVariants}
+        className="bg-blue-500 text-white px-4 py-2 rounded"
+      >
+        Generate Variants
+      </button>
+
+      {variants.length > 0 && (
+        <div className="grid grid-cols-5 gap-2 text-sm font-medium">
+          <span>Size</span>
+          <span>Color</span>
+          <span>MRP</span>
+          <span>Price</span>
+          <span>Stock</span>
+        </div>
+      )}
+
+      {variants.map((v, i) => (
+        <div key={i} className="grid grid-cols-5 gap-2">
+          <span>{v.size}</span>
+          <span>{v.color}</span>
 
           <input
+            value={v.mrp}
+            onChange={(e) =>
+              updateVariant(i, "mrp", e.target.value)
+            }
+            className="border px-2"
+          />
+          <input
+            value={v.price}
+            onChange={(e) =>
+              updateVariant(i, "price", e.target.value)
+            }
+            className="border px-2"
+          />
+          <input
+            value={v.stock}
+            onChange={(e) =>
+              updateVariant(i, "stock", e.target.value)
+            }
+            className="border px-2"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ============================= */
+/* ➕ ADD PRODUCT */
+/* ============================= */
+
+function AddProductForm({ categories }: { categories: any[] }) {
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  return (
+    <form
+      action={(formData) => {
+        setError("");
+        setSuccess("");
+
+        files.forEach((file) =>
+          formData.append("images", file)
+        );
+
+        startTransition(async () => {
+          const res = await createProduct(formData);
+
+          if (!res?.success) {
+            setError(res?.message || "Failed");
+            return;
+          }
+
+          setSuccess("Product created successfully ✅");
+          setVariants([]);
+          setFiles([]);
+        });
+      }}
+      className="space-y-4 border p-6 rounded-2xl bg-white shadow"
+    >
+      <h2 className="font-bold text-xl">Add Product</h2>
+
+      {error && <p className="text-red-500">{error}</p>}
+      {success && <p className="text-green-600">{success}</p>}
+
+      <input
+        type="hidden"
+        name="variants"
+        value={JSON.stringify(variants)}
+      />
+
+      <input
+        name="name"
+        placeholder="Product name"
+        className="border p-2 w-full rounded"
+      />
+
+      <textarea
+        name="description"
+        placeholder="Description"
+        className="border p-2 w-full rounded"
+      />
+
+      <select
+        name="category_id"
+        className="border p-2 w-full rounded"
+      >
+        <option value="">Select Category</option>
+        {categories.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+
+      <ImageUpload files={files} setFiles={setFiles} />
+      <VariantGenerator
+        variants={variants}
+        setVariants={setVariants}
+      />
+
+      <button
+        disabled={isPending}
+        className="bg-green-600 text-white px-4 py-2 rounded-xl w-full"
+      >
+        {isPending ? "Creating..." : "Create Product"}
+      </button>
+    </form>
+  );
+}
+
+/* ============================= */
+/* ✏️ EDIT MODAL */
+/* ============================= */
+
+function EditProductModal({ product, categories }: any) {
+  const [open, setOpen] = useState(false);
+  const [variants, setVariants] = useState(
+    product.product_variants || []
+  );
+  const [error, setError] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  if (!open)
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="bg-blue-500 text-white px-3 py-1 rounded"
+      >
+        Edit
+      </button>
+    );
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+      <div className="bg-white p-6 rounded-xl w-[500px] max-h-[90vh] overflow-auto">
+        {error && <p className="text-red-500">{error}</p>}
+
+        <form
+          action={(formData) => {
+            formData.append("id", product.id);
+
+            startTransition(async () => {
+              const res = await updateProduct(formData);
+
+              if (!res?.success) {
+                setError(res?.message || "Update failed");
+                return;
+              }
+
+              setOpen(false);
+            });
+          }}
+          className="space-y-3"
+        >
+          <input
             name="name"
-            placeholder="Product Name"
-            value={productName}
-            onChange={(e) => setProductName(e.target.value)}
-            required
-            className="border p-2 rounded"
+            defaultValue={product.name}
+            className="border p-2 w-full"
+          />
+
+          <textarea
+            name="description"
+            defaultValue={product.description}
+            className="border p-2 w-full"
           />
 
           <select
             name="category_id"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            required
-            className="border p-2 rounded"
+            defaultValue={product.category_id}
+            className="border p-2 w-full"
           >
-            <option value="">Select Category</option>
-            {categories?.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+            {categories.map((c: any) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
             ))}
           </select>
 
-          <input name="base_price" type="number" placeholder="Base Price" required className="border p-2 rounded" />
-          <input name="selling_price" type="number" placeholder="Selling Price" className="border p-2 rounded" />
-          <input name="stock" type="number" placeholder="Stock" className="border p-2 rounded" />
+          <input
+            type="hidden"
+            name="variants"
+            value={JSON.stringify(variants)}
+          />
 
-          {/* IMAGE */}
-          <div className="space-y-2 md:col-span-2">
-            <input
-              type="file"
-              name="images"
-              multiple
-              accept="image/*"
-              className="border p-2 rounded w-full"
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                setPreview(files.map((f) => URL.createObjectURL(f)));
-              }}
-            />
+          <VariantGenerator
+            variants={variants}
+            setVariants={setVariants}
+          />
 
-            <div className="flex gap-2 flex-wrap">
-              {preview.map((src, i) => (
-                <img key={i} src={src} className="h-20 w-20 rounded" />
-              ))}
-            </div>
+          <div className="flex gap-2">
+            <button
+              disabled={isPending}
+              className="bg-green-600 text-white px-4 py-2 rounded"
+            >
+              {isPending ? "Updating..." : "Update"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="border px-4 py-2 rounded"
+            >
+              Cancel
+            </button>
           </div>
-
-          <textarea name="description" placeholder="Description" className="border p-2 rounded md:col-span-2" />
-
-          {/* PRODUCT DETAILS */}
-          <div className="md:col-span-2 border p-4 rounded space-y-3">
-            <h3 className="font-semibold">Product Details</h3>
-
-            <p className="text-xs text-gray-500">
-              Auto detected GST & HSN (you can edit)
-            </p>
-
-            <input
-              name="gst_percent"
-              type="number"
-              value={gst}
-              onChange={(e) => setGst(e.target.value)}
-              className="border p-2 w-full rounded"
-            />
-
-            <input
-              name="hsn_code"
-              value={hsn}
-              onChange={(e) => setHsn(e.target.value)}
-              className="border p-2 w-full rounded"
-            />
-
-            <input name="country_of_origin" placeholder="Country of Origin" className="border p-2 w-full rounded" />
-            <input name="tags" placeholder="Tags (comma separated)" className="border p-2 w-full rounded" />
-          </div>
-
-          <DynamicAttributes categoryId={categoryId} />
-
-          <button className="bg-black text-white py-3 rounded md:col-span-2">
-            Add Product
-          </button>
         </form>
       </div>
+    </div>
+  );
+}
 
-      {/* PRODUCTS LIST */}
-      <div className="grid md:grid-cols-3 gap-6">
-        {products?.map((p: any) => (
-          <div key={p.id} className="bg-white p-4 rounded-xl shadow space-y-3">
+/* ============================= */
+/* MAIN */
+/* ============================= */
 
-            <div className="flex gap-2 overflow-x-auto">
-              {p.product_images?.length > 0 ? (
-                p.product_images.map((img: any) => (
-                  <img key={img.id} src={img.url} className="h-20 w-20 rounded" />
-                ))
-              ) : (
-                <img src={p.image || "/placeholder.png"} className="h-20 w-20 rounded" />
-              )}
+export default function ProductsClient({
+  products,
+  categories,
+}: any) {
+  const [isPending, startTransition] = useTransition();
+
+  return (
+    <div className="space-y-6">
+      <AddProductForm categories={categories} />
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {products.map((p: any) => (
+          <div key={p.id} className="border p-3 rounded-xl">
+            <img
+              src={p.image}
+              className="h-32 w-full object-cover rounded"
+            />
+
+            <p className="font-medium mt-2">{p.name}</p>
+
+            <div className="flex gap-2 mt-3">
+              <EditProductModal
+                product={p}
+                categories={categories}
+              />
+
+              <button
+                disabled={isPending}
+                onClick={() => {
+                  if (!confirm("Archive this product?"))
+                    return;
+
+                  startTransition(async () => {
+                    const res = await deleteProduct(p.id);
+
+                    if (!res?.success) {
+                      alert(res?.message || "Delete failed");
+                    }
+                  });
+                }}
+                className="bg-red-500 text-white px-3 py-1 rounded"
+              >
+                {isPending ? "..." : "Archive"}
+              </button>
             </div>
-
-            <h2 className="font-bold">{p.name}</h2>
-
-            <p className="text-sm text-gray-500">{p.categories?.name}</p>
-
-            <button onClick={() => setEditingProduct(p)} className="bg-yellow-500 text-white py-1 rounded w-full">
-              Edit
-            </button>
-
-            <button onClick={() => deleteProduct(p.id)} className="bg-red-500 text-white py-1 rounded w-full">
-              Delete
-            </button>
           </div>
         ))}
       </div>
-
-      {editingProduct && (
-        <EditProductForm
-          product={editingProduct}
-          categories={categories}
-          onClose={() => setEditingProduct(null)}
-        />
-      )}
     </div>
   );
 }

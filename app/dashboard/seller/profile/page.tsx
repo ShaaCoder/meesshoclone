@@ -1,71 +1,68 @@
 import { saveBankDetailsAction } from "@/app/actions/wallet";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { User, Mail, Phone, CreditCard } from "lucide-react";
 
 export default async function SellerProfilePage() {
   const supabase = await getSupabaseServer();
 
-  /* ============================= */
-  /* 🔐 GET USER */
-  /* ============================= */
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) return null;
 
-  /* ============================= */
-  /* 👤 GET PROFILE */
-  /* ============================= */
   const { data: profile } = await supabase
     .from("users")
     .select("*")
     .eq("id", user.id)
     .single();
 
-  /* ============================= */
-  /* 🏦 GET BANK */
-  /* ============================= */
   const { data: bank } = await supabase
     .from("bank_accounts")
     .select("*")
     .eq("reseller_id", user.id)
-    .single();
+    .maybeSingle();
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-8 text-black">
+    <div className="max-w-6xl mx-auto p-6 space-y-8 text-white">
 
-      <h1 className="text-2xl font-bold">Seller Profile</h1>
+      {/* HEADER */}
+      <div>
+        <h1 className="text-2xl font-bold">Profile 👤</h1>
+        <p className="text-zinc-400 text-sm">
+          Manage your account & payout details
+        </p>
+      </div>
 
       {/* ============================= */}
-      {/* 👤 BASIC INFO (READ ONLY) */}
+      {/* 👤 PROFILE CARD */}
       {/* ============================= */}
-      <div className="bg-white p-5 rounded-xl shadow space-y-3">
-        <h2 className="font-semibold text-lg">Basic Info</h2>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col md:flex-row items-center gap-6">
 
-        <div className="grid gap-3">
+        <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-xl">
+          👨‍💼
+        </div>
 
-          <div>
-            <label className="text-sm text-gray-500">Name</label>
-            <div className="input bg-gray-100">
-              {profile?.name || "Not set"}
-            </div>
-          </div>
+        <div className="flex-1 space-y-2">
+          <p className="text-lg font-semibold">
+            {profile?.name || "No Name"}
+          </p>
 
-          <div>
-            <label className="text-sm text-gray-500">Email</label>
-            <div className="input bg-gray-100">
+          <div className="flex flex-wrap gap-4 text-sm text-zinc-400">
+
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4" />
               {profile?.email}
             </div>
-          </div>
 
-          <div>
-            <label className="text-sm text-gray-500">Phone</label>
-            <div className="input bg-gray-100">
+            <div className="flex items-center gap-2">
+              <Phone className="w-4 h-4" />
               {profile?.phone || "Not set"}
             </div>
+
           </div>
 
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-zinc-500">
             Contact admin to update profile details
           </p>
         </div>
@@ -76,68 +73,84 @@ export default async function SellerProfilePage() {
       {/* ============================= */}
       {bank && (
         <div
-          className={`p-3 rounded text-sm ${
+          className={`p-4 rounded-xl text-sm border ${
             bank.is_verified
-              ? "bg-green-100 text-green-600"
-              : "bg-yellow-100 text-yellow-600"
+              ? "bg-green-500/10 text-green-400 border-green-500/20"
+              : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
           }`}
         >
           {bank.is_verified
-            ? "Bank Verified ✅"
-            : "Verification Pending ⏳"}
+            ? "✅ Bank Verified — You can withdraw funds"
+            : "⏳ Bank verification pending"}
         </div>
       )}
 
       {/* ============================= */}
       {/* 🏦 BANK FORM */}
       {/* ============================= */}
-      <div className="bg-white p-5 rounded-xl shadow">
-        <h2 className="font-semibold text-lg mb-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+
+        <h2 className="font-semibold mb-6 flex items-center gap-2">
+          <CreditCard className="w-5 h-5 text-emerald-400" />
           Bank Details
         </h2>
 
-        <form action={saveBankDetailsAction} className="space-y-4">
+        <form
+          action={saveBankDetailsAction}
+          className="grid md:grid-cols-2 gap-4"
+        >
 
-          <input
+          <Input
             name="name"
             placeholder="Account Holder Name"
-            defaultValue={bank?.account_holder_name || ""}
-            className="input"
+            defaultValue={bank?.account_holder_name}
           />
 
-          <input
-            name="accountNumber"
-            placeholder="Account Number"
-            defaultValue={bank?.account_number || ""}
-            className="input"
-          />
-
-          <input
-            name="ifsc"
-            placeholder="IFSC Code"
-            defaultValue={bank?.ifsc_code || ""}
-            className="input"
-          />
-
-          <input
+          <Input
             name="bankName"
             placeholder="Bank Name"
-            defaultValue={bank?.bank_name || ""}
-            className="input"
+            defaultValue={bank?.bank_name}
           />
 
-          <input
+          <Input
+            name="accountNumber"
+            placeholder="Account Number"
+            defaultValue={bank?.account_number}
+          />
+
+          <Input
+            name="ifsc"
+            placeholder="IFSC Code"
+            defaultValue={bank?.ifsc_code}
+          />
+
+          <Input
             name="upi"
             placeholder="UPI ID (optional)"
-            defaultValue={bank?.upi_id || ""}
-            className="input"
+            defaultValue={bank?.upi_id}
           />
 
-          <button className="bg-black text-white px-4 py-2 rounded w-full">
-            Save Bank Details
-          </button>
+          {/* FULL WIDTH BUTTON */}
+          <div className="md:col-span-2">
+            <button className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-medium transition">
+              Save Bank Details
+            </button>
+          </div>
+
         </form>
       </div>
     </div>
+  );
+}
+
+/* ================= INPUT ================= */
+function Input({ name, placeholder, defaultValue }: any) {
+  return (
+    <input
+      name={name}
+      placeholder={placeholder}
+      defaultValue={defaultValue || ""}
+      className="w-full bg-zinc-800 border border-zinc-700 px-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-black"
+    />
   );
 }

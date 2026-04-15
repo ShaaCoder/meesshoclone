@@ -10,7 +10,7 @@ import ReviewsList from "@/components/ReviewsList";
 /* ============================= */
 
 export async function generateMetadata({ params }: any) {
-  const { slug } = await params; // ✅ FIX (Next.js 15)
+  const { slug } = await params;
 
   const supabase = await getSupabaseServer();
 
@@ -18,9 +18,11 @@ export async function generateMetadata({ params }: any) {
     .from("products")
     .select(`
       *,
-      product_images(*)
+      product_images(*),
+      product_variants!product_variants_product_id_fkey(*)
     `)
     .eq("slug", slug)
+    .eq("status", "approved")
     .single();
 
   if (!product) return {};
@@ -54,22 +56,30 @@ export async function generateMetadata({ params }: any) {
 /* ============================= */
 
 export default async function ProductPage({ params }: any) {
-  const { slug } = await params; // ✅ FIX
+  const { slug } = await params;
 
   const supabase = await getSupabaseServer();
 
   /* ============================= */
-  /* 📦 FETCH PRODUCT (🔥 FIXED) */
+  /* 👤 GET USER (🔥 NEW) */
   /* ============================= */
 
- const { data: product, error } = await supabase
-  .from("products")
-  .select(`
-    *,
-    product_images(*),
-    product_variants(*),
-    product_attributes(value, attributes(name))
-  `)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  /* ============================= */
+  /* 📦 FETCH PRODUCT */
+  /* ============================= */
+
+  const { data: product, error } = await supabase
+    .from("products")
+    .select(`
+      *,
+      product_images(*),
+      product_attributes(value, attributes(name)),
+      product_variants!product_variants_product_id_fkey(*)
+    `)
     .eq("slug", slug)
     .eq("status", "approved")
     .single();
@@ -77,12 +87,35 @@ export default async function ProductPage({ params }: any) {
   if (error || !product) return notFound();
 
   /* ============================= */
+  /* ❤️ WISHLIST CHECK (🔥 NEW) */
+  /* ============================= */
+
+  let isWishlisted = false;
+
+  if (user) {
+    const { data: wishlistItem } = await supabase
+      .from("wishlists")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("product_id", product.id)
+      .maybeSingle();
+
+    isWishlisted = !!wishlistItem;
+  }
+
+  /* ============================= */
   /* 🔥 SIMILAR PRODUCTS */
   /* ============================= */
 
   const { data: similarProducts } = await supabase
     .from("products")
-    .select("*")
+    .select(`
+      id,
+      name,
+      slug,
+      image,
+      product_images(url)
+    `)
     .eq("category_id", product.category_id)
     .neq("id", product.id)
     .eq("status", "approved")
@@ -117,6 +150,18 @@ export default async function ProductPage({ params }: any) {
       : [product.image];
 
   /* ============================= */
+  /* 🔥 PRICE FOR SEO */
+  /* ============================= */
+
+  const firstVariant = product.product_variants?.[0];
+
+  const seoPrice =
+    firstVariant?.price ||
+    (firstVariant?.cost_price || 0) +
+      (firstVariant?.platform_margin || 0) ||
+    0;
+
+  /* ============================= */
   /* 🚀 UI */
   /* ============================= */
 
@@ -130,7 +175,7 @@ export default async function ProductPage({ params }: any) {
             "@context": "https://schema.org/",
             "@type": "Product",
             name: product.name,
-            image: images, // ✅ MULTIPLE IMAGES
+            image: images,
             description: product.description,
             brand: {
               "@type": "Brand",
@@ -139,7 +184,7 @@ export default async function ProductPage({ params }: any) {
             offers: {
               "@type": "Offer",
               priceCurrency: "INR",
-              price: product.selling_price,
+              price: seoPrice,
               availability: "https://schema.org/InStock",
             },
             aggregateRating: reviews?.length
@@ -153,12 +198,14 @@ export default async function ProductPage({ params }: any) {
         }}
       />
 
-      {/* 🛍️ PRODUCT */}
-      <ProductClient product={product} />
+      {/* 🛍️ PRODUCT (🔥 UPDATED) */}
+      <ProductClient
+        product={product}
+        isWishlisted={isWishlisted}
+      />
 
       {/* ⭐ REVIEWS */}
       <div className="max-w-4xl mx-auto px-6 mt-16 space-y-10">
-
         <div>
           <h2 className="text-2xl font-bold">
             ⭐ {avgRating.toFixed(1)} ({reviews?.length || 0} reviews)
@@ -174,7 +221,6 @@ export default async function ProductPage({ params }: any) {
           <h3 className="text-xl font-semibold mb-4">Customer Reviews</h3>
           <ReviewsList reviews={reviews} />
         </div>
-
       </div>
 
       {/* 🔥 SIMILAR PRODUCTS */}

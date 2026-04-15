@@ -1,5 +1,3 @@
-declare module "bwip-js";
-
 export interface Product {
   id: string;
   name: string;

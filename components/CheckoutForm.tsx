@@ -19,210 +19,239 @@ export default function CheckoutForm({ user }: CheckoutFormProps) {
     pincode: "",
   });
 
+  /* ============================= */
+  /* 🔄 INPUT CHANGE */
+  /* ============================= */
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    setFormData({
-      ...formData,
+    setFormData((prev) => ({
+      ...prev,
       [e.target.name]: e.target.value,
+    }));
+  };
+
+  /* ============================= */
+  /* ✅ VALIDATION */
+  /* ============================= */
+  const validate = () => {
+    if (!formData.name || !formData.phone || !formData.address) {
+      alert("Please fill all required fields");
+      return false;
+    }
+
+    if (formData.phone.length < 10) {
+      alert("Invalid phone number");
+      return false;
+    }
+
+    if (formData.pincode.length < 5) {
+      alert("Invalid pincode");
+      return false;
+    }
+
+    return true;
+  };
+
+  /* ============================= */
+  /* 💳 LOAD RAZORPAY SCRIPT (ONCE) */
+  /* ============================= */
+  const loadRazorpay = () => {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) return resolve(true);
+
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+
+      document.body.appendChild(script);
     });
   };
 
-const handleSubmit = async (paymentMethod: "cod" | "online") => {
-  setIsPending(true);
+  /* ============================= */
+  /* 🚀 MAIN SUBMIT */
+  /* ============================= */
+  const handleSubmit = async (paymentMethod: "cod" | "online") => {
+    if (isPending) return; // prevent double click
+    if (!validate()) return;
 
-  try {
-    /* ============================= */
-    /* 🧾 STEP 1: CREATE DB ORDER */
-    /* ============================= */
-    const order = await placeOrder({
-      paymentMethod,
-      ...formData,
-    });
+    setIsPending(true);
 
-    console.log("🧾 ORDER CREATED:", order);
+    try {
+      /* ============================= */
+      /* 🧾 CREATE ORDER */
+      /* ============================= */
+      const order = await placeOrder({
+        paymentMethod,
+        ...formData,
+      });
 
-    if (paymentMethod === "cod") {
-      alert("Order Placed Successfully ✅");
-      window.location.href = "/dashboard/user";
-      return;
-    }
+      if (!order?.id) throw new Error("Order failed");
 
-    /* ============================= */
-    /* 💳 STEP 2: CREATE RAZORPAY ORDER */
-    /* ============================= */
-    const res = await fetch("/api/payment/create-order", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        orderId: order.id, // ✅ FIXED
-      }),
-    });
+      /* ============================= */
+      /* 💵 COD FLOW */
+      /* ============================= */
+      if (paymentMethod === "cod") {
+        alert("Order placed successfully ✅");
+        window.location.href = "/dashboard/user";
+        return;
+      }
 
-    const data = await res.json();
+      /* ============================= */
+      /* 💳 ONLINE PAYMENT FLOW */
+      /* ============================= */
 
-    if (!res.ok) {
-      throw new Error(data.error || "Payment init failed");
-    }
+      const razorpayLoaded = await loadRazorpay();
+      if (!razorpayLoaded) {
+        throw new Error("Payment SDK failed to load");
+      }
 
-    /* ============================= */
-    /* 💳 STEP 3: LOAD RAZORPAY */
-    /* ============================= */
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    document.body.appendChild(script);
+      /* CREATE RAZORPAY ORDER */
+      const res = await fetch("/api/payment/create-order", {
+        method: "POST",
+        body: JSON.stringify({ orderId: order.id }),
+      });
 
-    await new Promise((resolve) => {
-      script.onload = resolve;
-    });
+      const data = await res.json();
 
-    /* ============================= */
-    /* 💳 STEP 4: OPEN CHECKOUT */
-    /* ============================= */
-    const options = {
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-      amount: data.amount,
-      currency: data.currency,
-      order_id: data.id,
+      if (!res.ok) {
+        throw new Error(data.error || "Payment init failed");
+      }
 
-      name: "Your Store",
+      /* ============================= */
+      /* 💳 OPEN CHECKOUT */
+      /* ============================= */
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: data.amount,
+        currency: data.currency,
+        order_id: data.id,
 
-      handler: async function (response: any) {
-        const verifyRes = await fetch("/api/payment/verify", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+        name: "Your Store",
+        description: "Order Payment",
+
+        handler: async function (response: any) {
+          try {
+            const verifyRes = await fetch("/api/payment/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...response,
+                orderId: order.id,
+              }),
+            });
+
+            const verifyData = await verifyRes.json();
+
+            if (verifyData.success) {
+              alert("Payment successful 🎉");
+              window.location.href = "/dashboard/user";
+            } else {
+              alert("Payment verification failed");
+            }
+          } catch (err) {
+            alert("Verification error");
+          }
+        },
+
+        modal: {
+          ondismiss: function () {
+            alert("Payment cancelled ❌");
           },
-          body: JSON.stringify({
-            ...response,
-            orderId: order.id,
-          }),
-        });
+        },
 
-        const verifyData = await verifyRes.json();
+        prefill: {
+          name: formData.name,
+          contact: formData.phone,
+        },
 
-        if (verifyData.success) {
-          alert("Payment Successful 🎉");
-          window.location.href = "/dashboard/user";
-        } else {
-          alert("Payment verification failed");
-        }
-      },
+        theme: {
+          color: "#000000",
+        },
+      };
 
-      prefill: {
-        name: formData.name,
-        contact: formData.phone,
-      },
-    };
+      const rzp = new (window as any).Razorpay(options);
 
-    const rzp = new (window as any).Razorpay(options);
-    rzp.open();
+      /* ❌ PAYMENT FAILED HANDLER */
+      rzp.on("payment.failed", function (response: any) {
+        console.error(response.error);
+        alert("Payment failed ❌");
+      });
 
-  } catch (err: any) {
-    console.error(err);
-    alert(err.message);
-  } finally {
-    setIsPending(false);
-  }
-};
+      rzp.open();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Something went wrong");
+    } finally {
+      setIsPending(false);
+    }
+  };
+
   return (
     <div className="bg-white p-6 rounded-xl shadow border">
       <form className="space-y-5">
-        
+
         {/* NAME */}
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Full Name
-          </label>
-          <input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            required
-            className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-black"
-          />
-        </div>
+        <input
+          type="text"
+          name="name"
+          value={formData.name}
+          onChange={handleChange}
+          placeholder="Full Name"
+          className="w-full px-4 py-3 border rounded-lg"
+        />
 
         {/* PHONE */}
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Phone Number
-          </label>
-          <input
-            type="tel"
-            name="phone"
-            value={formData.phone}
-            onChange={handleChange}
-            required
-            className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-black"
-          />
-        </div>
+        <input
+          type="tel"
+          name="phone"
+          value={formData.phone}
+          onChange={handleChange}
+          placeholder="Phone Number"
+          className="w-full px-4 py-3 border rounded-lg"
+        />
 
         {/* ADDRESS */}
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Full Address
-          </label>
-          <input
-            type="text"
-            name="address"
-            value={formData.address}
-            onChange={handleChange}
-            required
-            placeholder="House no, Street, Locality"
-            className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-black"
-          />
-        </div>
+        <input
+          type="text"
+          name="address"
+          value={formData.address}
+          onChange={handleChange}
+          placeholder="Full Address"
+          className="w-full px-4 py-3 border rounded-lg"
+        />
 
         {/* CITY + PINCODE */}
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              City
-            </label>
-            <input
-              type="text"
-              name="city"
-              value={formData.city}
-              onChange={handleChange}
-              required
-              className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-black"
-            />
-          </div>
+          <input
+            type="text"
+            name="city"
+            value={formData.city}
+            onChange={handleChange}
+            placeholder="City"
+            className="px-4 py-3 border rounded-lg"
+          />
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Pincode
-            </label>
-            <input
-              type="text"
-              name="pincode"
-              value={formData.pincode}
-              onChange={handleChange}
-              required
-              className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-black"
-            />
-          </div>
+          <input
+            type="text"
+            name="pincode"
+            value={formData.pincode}
+            onChange={handleChange}
+            placeholder="Pincode"
+            className="px-4 py-3 border rounded-lg"
+          />
         </div>
 
         {/* STATE */}
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            State
-          </label>
-          <input
-            type="text"
-            name="state"
-            value={formData.state}
-            onChange={handleChange}
-            required
-            className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-black"
-          />
-        </div>
+        <input
+          type="text"
+          name="state"
+          value={formData.state}
+          onChange={handleChange}
+          placeholder="State"
+          className="w-full px-4 py-3 border rounded-lg"
+        />
 
         {/* BUTTONS */}
         <div className="pt-6 space-y-3">
@@ -230,7 +259,7 @@ const handleSubmit = async (paymentMethod: "cod" | "online") => {
             type="button"
             onClick={() => handleSubmit("cod")}
             disabled={isPending}
-            className="w-full bg-gray-800 text-white py-4 rounded-xl font-semibold disabled:opacity-50"
+            className="w-full bg-gray-800 text-white py-4 rounded-xl"
           >
             {isPending ? "Processing..." : "Cash on Delivery"}
           </button>
@@ -239,9 +268,9 @@ const handleSubmit = async (paymentMethod: "cod" | "online") => {
             type="button"
             onClick={() => handleSubmit("online")}
             disabled={isPending}
-            className="w-full bg-black text-white py-4 rounded-xl font-semibold disabled:opacity-50"
+            className="w-full bg-black text-white py-4 rounded-xl"
           >
-            {isPending ? "Processing..." : "Pay Online Now"}
+            {isPending ? "Processing..." : "Pay Online"}
           </button>
         </div>
       </form>

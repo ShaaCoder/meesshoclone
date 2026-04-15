@@ -1,4 +1,3 @@
-// app/products/[slug]/BuyNowButton.tsx
 "use client";
 
 import { useTransition } from "react";
@@ -7,18 +6,34 @@ import { addToCart } from "@/app/actions/cart";
 
 type Props = {
   productId: string;
-  className?: string; // ✅ optional styling
+  variantId?: string; // ✅ must come from ProductClient
+  className?: string;
+  disabled?: boolean;
 };
 
-export default function BuyNowButton({ productId, className }: Props) {
+export default function BuyNowButton({
+  productId,
+  variantId,
+  className,
+  disabled,
+}: Props) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
   const handleBuyNow = () => {
+    // 🚨 IMPORTANT: block if no variant
+    if (!variantId) {
+      alert("Please select size / variant");
+      return;
+    }
+
     startTransition(async () => {
       try {
-        await addToCart(productId);
-        router.push("/cart"); // redirect to cart
+        // ✅ FIX: pass variantId
+        await addToCart(productId, variantId);
+
+        // ✅ redirect after adding
+        router.push("/cart");
       } catch (error: any) {
         alert(error.message || "Something went wrong");
       }
@@ -28,8 +43,10 @@ export default function BuyNowButton({ productId, className }: Props) {
   return (
     <button
       onClick={handleBuyNow}
-      disabled={isPending}
-      className={`w-full py-4 bg-black text-white rounded-2xl font-semibold text-lg hover:bg-gray-900 transition disabled:opacity-70 ${className || ""}`}
+      disabled={disabled || isPending} // ✅ FIX
+      className={`w-full py-4 bg-black text-white rounded-2xl font-semibold text-lg hover:bg-gray-900 transition disabled:opacity-70 ${
+        className || ""
+      }`}
     >
       {isPending ? "Processing..." : "Buy Now"}
     </button>

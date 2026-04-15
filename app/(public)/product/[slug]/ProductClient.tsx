@@ -5,11 +5,21 @@ import Image from "next/image";
 import VariantSelector from "@/components/VariantSelector";
 import AddToCartButton from "./AddToCartButton";
 import BuyNowButton from "@/components/BuyNowButton";
+import WishlistButton from "@/components/WishlistButton";
 
-export default function ProductClient({ product }: any) {
-  const [selectedVariant, setSelectedVariant] = useState<any>(null);
+export default function ProductClient({ product, isWishlisted }: any) {
+  /* ============================= */
+  /* ✅ VARIANT */
+  /* ============================= */
+  const hasVariants = product.product_variants?.length > 0;
 
-  /* 🔥 MULTIPLE IMAGES */
+  const [selectedVariant, setSelectedVariant] = useState(
+    hasVariants ? product.product_variants[0] : null
+  );
+
+  /* ============================= */
+  /* 🖼 IMAGES */
+  /* ============================= */
   const images =
     product.product_images?.length > 0
       ? product.product_images.map((img: any) => img.url)
@@ -17,14 +27,31 @@ export default function ProductClient({ product }: any) {
 
   const [selectedImage, setSelectedImage] = useState(images[0]);
 
-  const basePrice = Number(product.base_price || 0);
-  const price =
+  /* ============================= */
+  /* 💰 PRICE */
+  /* ============================= */
+  const price = Number(
     selectedVariant?.price ||
-    Number(product.selling_price) ||
-    basePrice;
+      (selectedVariant?.cost_price || 0) +
+        (selectedVariant?.platform_margin || 0) ||
+      product?.product_variants?.[0]?.price ||
+      0
+  );
 
-  const mrp = Math.round(price * 1.3);
-  const discount = Math.round(((mrp - price) / mrp) * 100);
+  const mrp = Number(
+    selectedVariant?.mrp || Math.round(price * 1.3)
+  );
+
+  const discount =
+    mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0;
+
+  /* ============================= */
+  /* 📦 STOCK */
+  /* ============================= */
+  const stock =
+    selectedVariant?.stock ??
+    product?.product_variants?.[0]?.stock ??
+    0;
 
   return (
     <div className="bg-gray-50 min-h-screen pb-24">
@@ -34,32 +61,41 @@ export default function ProductClient({ product }: any) {
           {/* ================= IMAGE ================= */}
           <div className="space-y-4">
 
-            {/* 🔥 MAIN IMAGE */}
-            <div className="relative aspect-square bg-white rounded-3xl overflow-hidden shadow-sm">
+            <div className="relative aspect-square bg-white rounded-3xl overflow-hidden shadow-md">
+
+              {/* ❤️ WISHLIST (FIXED) */}
+              <div className="absolute top-4 right-4 z-10">
+                <WishlistButton
+                  productId={product.id}
+                  initial={isWishlisted}
+                />
+              </div>
+
+              {/* DISCOUNT */}
+              {discount > 5 && (
+                <div className="absolute top-4 left-4 bg-red-500 text-white text-xs px-3 py-1 rounded-full shadow">
+                  {discount}% OFF
+                </div>
+              )}
+
               <Image
                 src={selectedImage}
                 alt={product.name}
                 fill
                 className="object-cover"
               />
-
-              {discount > 5 && (
-                <div className="absolute top-4 left-4 bg-red-500 text-white text-sm px-3 py-1 rounded-xl shadow">
-                  {discount}% OFF
-                </div>
-              )}
             </div>
 
-            {/* 🔥 THUMBNAILS */}
+            {/* THUMBNAILS */}
             <div className="flex gap-3 overflow-x-auto">
               {images.map((img: string, i: number) => (
                 <img
                   key={i}
                   src={img}
                   onClick={() => setSelectedImage(img)}
-                  className={`h-20 w-20 object-cover rounded cursor-pointer border-2 transition ${
+                  className={`h-20 w-20 object-cover rounded-lg cursor-pointer border-2 transition ${
                     selectedImage === img
-                      ? "border-black"
+                      ? "border-black scale-105"
                       : "border-transparent"
                   }`}
                 />
@@ -81,117 +117,73 @@ export default function ProductClient({ product }: any) {
               {product.name}
             </h1>
 
-            <div className="flex items-center gap-2 text-sm">
-              <span className="bg-green-600 text-white px-2 py-0.5 rounded text-xs">
-                4.4 ★
-              </span>
-              <span className="text-gray-500">(1,245 reviews)</span>
-            </div>
-
-            <div className="space-y-1">
+            {/* PRICE CARD */}
+            <div className="bg-white p-4 rounded-2xl shadow-sm border space-y-2">
               <div className="flex items-center gap-3">
                 <span className="text-3xl font-bold text-black">
-                  ₹{price}
+                  ₹{price || "N/A"}
                 </span>
 
-                <span className="text-lg text-gray-400 line-through">
-                  ₹{mrp}
-                </span>
+                {mrp > price && (
+                  <span className="text-lg text-gray-400 line-through">
+                    ₹{mrp}
+                  </span>
+                )}
               </div>
 
-              <p className="text-green-600 text-sm font-semibold">
-                Save ₹{mrp - price} ({discount}% OFF)
-              </p>
+              {discount > 0 && (
+                <p className="text-green-600 text-sm font-semibold">
+                  Save ₹{mrp - price} ({discount}% OFF)
+                </p>
+              )}
             </div>
 
-            <div className="bg-yellow-50 border border-yellow-200 text-sm px-4 py-2 rounded-xl w-fit">
-              🔥 Only few items left in stock!
-            </div>
+            {/* STOCK */}
+            {stock > 0 ? (
+              <div className="bg-yellow-50 border border-yellow-200 text-sm px-4 py-2 rounded-xl w-fit">
+                🔥 Only {stock} items left
+              </div>
+            ) : (
+              <div className="bg-red-50 border border-red-200 text-sm px-4 py-2 rounded-xl w-fit text-red-600">
+                Out of Stock
+              </div>
+            )}
 
+            {/* DESCRIPTION */}
             <p className="text-gray-600 leading-relaxed">
               {product.description}
             </p>
 
-            {/* MANUFACTURER */}
-            <div className="bg-white border rounded-2xl p-4">
-              <h3 className="font-semibold mb-3">Manufacturer Details</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Manufacturer</span>
-                  <span>{product.manufacturer_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Address</span>
-                  <span>{product.manufacturer_address}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Pincode</span>
-                  <span>{product.manufacturer_pincode}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* PRODUCT INFO */}
-            <div className="bg-white border rounded-2xl p-4">
-              <h3 className="font-semibold mb-3">Product Information</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Country</span>
-                  <span>{product.country_of_origin}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">GST</span>
-                  <span>{product.gst_percent}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">HSN Code</span>
-                  <span>{product.hsn_code}</span>
-                </div>
-              </div>
-            </div>
-
             {/* VARIANTS */}
-            {product.product_variants?.length > 0 && (
-              <div>
-                <h3 className="font-semibold mb-2">Select Option</h3>
+            {hasVariants ? (
+              <div className="bg-white p-4 rounded-2xl shadow-sm border">
+                <h3 className="font-semibold mb-3">Select Option</h3>
                 <VariantSelector
                   variants={product.product_variants}
                   onSelect={setSelectedVariant}
                 />
               </div>
-            )}
-
-            {/* ATTRIBUTES */}
-            {product.product_attributes?.length > 0 && (
-              <div className="bg-white border rounded-2xl p-4">
-                <h3 className="font-semibold mb-3">Product Details</h3>
-                <div className="space-y-2 text-sm">
-                  {product.product_attributes.map((attr: any) => (
-                    <div key={attr.attributes.name} className="flex justify-between">
-                      <span className="text-gray-500">
-                        {attr.attributes.name}
-                      </span>
-                      <span>{attr.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            ) : (
+              <p className="text-sm text-gray-400">
+                No variants available
+              </p>
             )}
 
             {/* ACTION BUTTONS */}
-            <div className="flex flex-col gap-3 pt-4">
-
+            <div className="flex flex-col gap-3 pt-2">
               <AddToCartButton
                 productId={product.id}
                 variantId={selectedVariant?.id}
-                className="w-full py-4 text-lg bg-black text-white rounded-xl"
+                disabled={stock === 0 || (hasVariants && !selectedVariant)}
+                className="w-full py-4 text-lg bg-black text-white rounded-xl hover:opacity-90 transition disabled:opacity-50"
               />
 
               <BuyNowButton
                 productId={product.id}
-                className="w-full py-4 text-lg bg-yellow-400 text-black rounded-xl font-semibold"
+                variantId={selectedVariant?.id}
+                disabled={stock === 0 || (hasVariants && !selectedVariant)}
+                className="w-full py-4 text-lg bg-yellow-400 text-black rounded-xl font-semibold hover:bg-yellow-500 transition disabled:opacity-50"
               />
-
             </div>
 
           </div>
@@ -199,11 +191,17 @@ export default function ProductClient({ product }: any) {
       </div>
 
       {/* MOBILE BAR */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-3 flex gap-3 md:hidden z-50">
-        <button className="flex-1 border rounded-xl py-3">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-3 flex gap-3 md:hidden shadow-lg">
+        <button
+          disabled={stock === 0 || (hasVariants && !selectedVariant)}
+          className="flex-1 border rounded-xl py-3 disabled:opacity-50"
+        >
           Add to Cart
         </button>
-        <button className="flex-1 bg-black text-white rounded-xl py-3">
+        <button
+          disabled={stock === 0 || (hasVariants && !selectedVariant)}
+          className="flex-1 bg-black text-white rounded-xl py-3 disabled:opacity-50"
+        >
           Buy Now
         </button>
       </div>

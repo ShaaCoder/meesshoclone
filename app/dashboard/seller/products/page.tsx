@@ -10,22 +10,38 @@ export default async function Page() {
 
   if (!user) return <div>Unauthorized</div>;
 
-  const { data: products, error: pError } = await supabase
+  /* ============================= */
+  /* 📦 PRODUCTS */
+  /* ============================= */
+  const { data: products, error } = await supabase
     .from("products")
     .select(`
-      *,
+      id,
+      name,
+      slug,
+      status,
+      created_at,
+      image,
+      category_id,
       categories(name),
-      product_images(*)
+      catalogs(title),
+      product_variants!product_variants_product_id_fkey(*),
+      product_images!product_images_product_id_fkey(*)
     `)
     .eq("seller_id", user.id)
+    .neq("status", "deleted") // 🔥 IMPORTANT
     .order("created_at", { ascending: false });
 
-  const { data: categories, error: cError } = await supabase
-    .from("categories")
-    .select("*");
+  if (error) {
+    console.error("PRODUCT FETCH ERROR:", error);
+  }
 
-  console.log("CATEGORIES:", categories);
-  console.log("ERROR:", cError);
+  /* ============================= */
+  /* 📂 CATEGORIES */
+  /* ============================= */
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("id, name");
 
   return (
     <ProductsClient

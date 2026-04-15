@@ -1,7 +1,19 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import bwipjs from "bwip-js";
 
-export async function generateInvoicePDF(order: any, items: any[], invoiceNumber: string) {
+export async function generateInvoicePDF(
+  order: any,
+  items: any[],
+  invoiceNumber: string,
+  summary: {
+    totalGST: number;
+    totalTaxable: number;
+    cgst?: number;
+    sgst?: number;
+    igst?: number;
+    grandTotal: number;
+  }
+) {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([600, 900]);
 
@@ -10,7 +22,7 @@ export async function generateInvoicePDF(order: any, items: any[], invoiceNumber
 
   let y = 860;
 
-  /* ================= SELLER BLOCK ================= */
+  /* ================= SELLER ================= */
   page.drawText("Sold By:", { x: 50, y, size: 10, font: bold });
   y -= 15;
 
@@ -20,7 +32,7 @@ export async function generateInvoicePDF(order: any, items: any[], invoiceNumber
   y -= 12;
   page.drawText("Delhi, India - 110001", { x: 50, y, size: 10, font });
 
-  /* ================= INVOICE HEADER ================= */
+  /* ================= HEADER ================= */
   y -= 30;
 
   page.drawText("TAX INVOICE", {
@@ -63,7 +75,7 @@ export async function generateInvoicePDF(order: any, items: any[], invoiceNumber
     font,
   });
 
-  /* ================= AWB BARCODE ================= */
+  /* ================= BARCODE ================= */
   y -= 40;
 
   const awb = order.awb_code || order.id.slice(0, 10);
@@ -95,12 +107,14 @@ export async function generateInvoicePDF(order: any, items: any[], invoiceNumber
     console.log("Barcode failed");
   }
 
-  /* ================= ITEMS ================= */
+  /* ================= TABLE HEADER ================= */
   y -= 80;
 
   page.drawText("Product", { x: 50, y, size: 10, font: bold });
-  page.drawText("Qty", { x: 300, y, size: 10, font: bold });
-  page.drawText("Price", { x: 350, y, size: 10, font: bold });
+  page.drawText("HSN", { x: 200, y, size: 10, font: bold });
+  page.drawText("Qty", { x: 260, y, size: 10, font: bold });
+  page.drawText("Price", { x: 310, y, size: 10, font: bold });
+  page.drawText("GST", { x: 380, y, size: 10, font: bold });
   page.drawText("Total", { x: 450, y, size: 10, font: bold });
 
   y -= 15;
@@ -114,28 +128,42 @@ export async function generateInvoicePDF(order: any, items: any[], invoiceNumber
     page.drawText(item.products?.name || "Product", {
       x: 50,
       y,
-      size: 10,
+      size: 9,
+      font,
+    });
+
+    page.drawText(item.hsn_code || "-", {
+      x: 200,
+      y,
+      size: 9,
       font,
     });
 
     page.drawText(String(item.quantity), {
-      x: 300,
+      x: 260,
       y,
-      size: 10,
+      size: 9,
       font,
     });
 
     page.drawText(`Rs. ${item.price}`, {
-      x: 350,
+      x: 310,
       y,
-      size: 10,
+      size: 9,
+      font,
+    });
+
+    page.drawText(`${item.gst_percent || 0}%`, {
+      x: 380,
+      y,
+      size: 9,
       font,
     });
 
     page.drawText(`Rs. ${total}`, {
       x: 450,
       y,
-      size: 10,
+      size: 9,
       font,
     });
 
@@ -145,14 +173,28 @@ export async function generateInvoicePDF(order: any, items: any[], invoiceNumber
   /* ================= TOTAL ================= */
   y -= 10;
 
-  const gst = subtotal * 0.18;
-  const total = subtotal + gst;
+  const { totalGST, totalTaxable, cgst = 0, sgst = 0, igst = 0, grandTotal } =
+    summary;
 
-  page.drawText(`Subtotal: Rs. ${subtotal}`, { x: 350, y, size: 10, font });
+  page.drawText(`Taxable: Rs. ${totalTaxable.toFixed(2)}`, {
+    x: 350,
+    y,
+    size: 10,
+    font,
+  });
   y -= 15;
-  page.drawText(`GST: Rs. ${gst.toFixed(2)}`, { x: 350, y, size: 10, font });
-  y -= 15;
-  page.drawText(`Total: Rs. ${total.toFixed(2)}`, {
+
+  if (cgst > 0) {
+    page.drawText(`CGST: Rs. ${cgst.toFixed(2)}`, { x: 350, y, size: 10, font });
+    y -= 15;
+    page.drawText(`SGST: Rs. ${sgst.toFixed(2)}`, { x: 350, y, size: 10, font });
+  } else {
+    page.drawText(`IGST: Rs. ${igst.toFixed(2)}`, { x: 350, y, size: 10, font });
+  }
+
+  y -= 20;
+
+  page.drawText(`Total: Rs. ${grandTotal.toFixed(2)}`, {
     x: 350,
     y,
     size: 12,

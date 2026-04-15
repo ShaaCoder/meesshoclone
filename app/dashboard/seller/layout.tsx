@@ -10,10 +10,7 @@ export default async function SellerLayout({
   children: React.ReactNode;
 }) {
   const supabase = await getSupabaseServer();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) return redirect("/login");
 
@@ -29,20 +26,25 @@ export default async function SellerLayout({
 
   if (profile?.status !== "approved") {
     return (
-      <div className="p-10 text-center">
+      <div className="p-10 text-center text-white bg-zinc-950 min-h-screen">
         ⏳ Waiting for admin approval...
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
+    <div className="flex h-screen overflow-hidden bg-zinc-950">
+      {/* Sidebar - Fixed Width */}
       <SellerSidebar />
 
-      <div className="flex-1 flex flex-col">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         <SellerHeader />
 
-        <div className="p-6">{children}</div>
+        {/* Scrollable Content */}
+        <main className="flex-1 overflow-auto bg-zinc-950 p-6 lg:p-8">
+          {children}
+        </main>
       </div>
     </div>
   );

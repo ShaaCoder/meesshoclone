@@ -86,67 +86,50 @@ export async function updateProductStatus(productId: string, status: string) {
 export async function approveWithdraw(id: string) {
   await requireAdmin();
 
-  const supabase = supabaseAdmin;
-
-  /* ============================= */
-  /* 1. GET REQUEST */
-  /* ============================= */
-  const { data: request } = await supabase
+  const { data: withdraw } = await supabaseAdmin
     .from("withdraw_requests")
     .select("*")
     .eq("id", id)
     .single();
 
-  if (!request) throw new Error("Request not found");
+  if (!withdraw) throw new Error("Withdraw not found");
 
-  /* ❌ PREVENT DOUBLE PROCESS */
-  if (request.status !== "pending") {
+  if (withdraw.status !== "pending") {
     throw new Error("Already processed");
   }
 
-  /* ============================= */
-  /* 2. CHECK BANK */
-  /* ============================= */
-  const { data: bank } = await supabase
-    .from("bank_accounts")
+  const { data: wallet } = await supabaseAdmin
+    .from("wallets")
     .select("*")
-    .eq("reseller_id", request.reseller_id)
+    .eq("seller_id", withdraw.seller_id)
     .single();
 
-  if (!bank || !bank.is_verified) {
-    throw new Error("Bank not verified");
+  if (!wallet) throw new Error("Wallet not found");
+
+  if (wallet.locked_balance < withdraw.amount) {
+    throw new Error("Invalid locked balance");
   }
 
-  /* ============================= */
-  /* 3. DEDUCT WALLET */
-  /* ============================= */
-  await supabase.rpc("decrement_wallet", {
-    user_id: request.reseller_id,
-    amount: request.amount,
-  });
+  await supabaseAdmin
+    .from("wallets")
+    .update({
+      balance: wallet.balance - withdraw.amount,
+      locked_balance: wallet.locked_balance - withdraw.amount,
+    })
+    .eq("seller_id", withdraw.seller_id);
 
-  /* ============================= */
-  /* 4. TRANSACTION LOG */
-  /* ============================= */
-  await supabase.from("transactions").insert({
-    reseller_id: request.reseller_id,
-    amount: request.amount,
+  await supabaseAdmin.from("wallet_transactions").insert({
+    seller_id: withdraw.seller_id,
     type: "debit",
-    status: "completed",
+    amount: withdraw.amount,
+    reference_id: id,
+    note: "Withdraw approved",
   });
 
-  /* ============================= */
-  /* 5. UPDATE STATUS (IMPORTANT) */
-  /* ============================= */
-  await supabase
+  await supabaseAdmin
     .from("withdraw_requests")
-    .update({ status: "approved" }) // 👈 NOT paid yet
+    .update({ status: "approved" })
     .eq("id", id);
-
-  /* ============================= */
-  /* 💰 RAZORPAY (KEEP AS IS) */
-  /* ============================= */
-  // 🔒 You said don't change → keeping untouched
 }
   /* 💰 (OPTIONAL) RAZORPAY PAYOUT */
   // 👉 You can enable this later
@@ -183,21 +166,42 @@ export async function approveWithdraw(id: string) {
 export async function rejectWithdraw(id: string) {
   await requireAdmin();
 
-  const supabase = supabaseAdmin;
-
-  const { data: request } = await supabase
+  const { data: withdraw } = await supabaseAdmin
     .from("withdraw_requests")
     .select("*")
     .eq("id", id)
     .single();
 
-  if (!request) throw new Error("Request not found");
+  if (!withdraw) throw new Error("Withdraw not found");
 
-  if (request.status !== "pending") {
+  if (withdraw.status !== "pending") {
     throw new Error("Already processed");
   }
 
-  await supabase
+  const { data: wallet } = await supabaseAdmin
+    .from("wallets")
+    .select("*")
+    .eq("seller_id", withdraw.seller_id)
+    .single();
+
+  if (!wallet) throw new Error("Wallet not found");
+
+  await supabaseAdmin
+    .from("wallets")
+    .update({
+      locked_balance: wallet.locked_balance - withdraw.amount,
+    })
+    .eq("seller_id", withdraw.seller_id);
+
+  await supabaseAdmin.from("wallet_transactions").insert({
+    seller_id: withdraw.seller_id,
+    type: "release",
+    amount: withdraw.amount,
+    reference_id: id,
+    note: "Withdraw rejected",
+  });
+
+  await supabaseAdmin
     .from("withdraw_requests")
     .update({ status: "rejected" })
     .eq("id", id);
@@ -205,17 +209,72 @@ export async function rejectWithdraw(id: string) {
 export async function markSellerPaid(orderId: string) {
   await requireAdmin();
 
-  const { error } = await supabaseAdmin
+  /* ============================= */
+  /* 📦 GET ORDER */
+  /* ============================= */
+  const { data: order } = await supabaseAdmin
     .from("orders")
-    .update({
-      seller_paid: true,
-    })
-    .eq("id", orderId);
+    .select("*")
+    .eq("id", orderId)
+    .single();
 
-  if (error) {
-    console.error(error);
-    throw new Error("Failed to mark payout");
+  if (!order) throw new Error("Order not found");
+
+  if (order.seller_paid) {
+    throw new Error("Already paid");
   }
+
+  /* ============================= */
+  /* 💰 GET SELLER */
+  /* ============================= */
+  const { data: item } = await supabaseAdmin
+    .from("order_items")
+    .select("seller_id")
+    .eq("order_id", orderId)
+    .limit(1)
+    .single();
+
+  if (!item) throw new Error("Seller not found");
+
+  /* ============================= */
+  /* 💳 GET WALLET */
+  /* ============================= */
+  const { data: wallet } = await supabaseAdmin
+    .from("wallets")
+    .select("*")
+    .eq("seller_id", item.seller_id)
+    .single();
+
+  if (!wallet) throw new Error("Wallet not found");
+
+  /* ============================= */
+  /* 💸 ADD MONEY */
+  /* ============================= */
+  await supabaseAdmin
+    .from("wallets")
+    .update({
+      balance: wallet.balance + order.seller_payout,
+    })
+    .eq("seller_id", item.seller_id);
+
+  /* ============================= */
+  /* 📜 TRANSACTION */
+  /* ============================= */
+  await supabaseAdmin.from("wallet_transactions").insert({
+    seller_id: item.seller_id,
+    type: "credit",
+    amount: order.seller_payout,
+    reference_id: orderId,
+    note: "Order payout",
+  });
+
+  /* ============================= */
+  /* ✅ MARK PAID */
+  /* ============================= */
+  await supabaseAdmin
+    .from("orders")
+    .update({ seller_paid: true })
+    .eq("id", orderId);
 }
 export async function createShipmentByAdmin(orderId: string) {
   /* ============================= */
@@ -311,11 +370,13 @@ export async function createShipmentByAdmin(orderId: string) {
   }
 }
 
-export async function verifyBankAccount(resellerId: string) {
+export async function verifyBankAccount(sellerId: string) {
+  await requireAdmin();
+
   await supabaseAdmin
     .from("bank_accounts")
     .update({ is_verified: true })
-    .eq("reseller_id", resellerId);
+    .eq("seller_id", sellerId);
 }
 
 export async function markWithdrawPaid(id: string) {
@@ -391,4 +452,85 @@ export async function retryCourierAssign(orderId: string) {
 
     throw new Error(error.message || "Retry failed");
   }
+}
+
+export async function markOrderDelivered(orderId: string) {
+  await requireAdmin();
+
+  /* ============================= */
+  /* 📦 GET ORDER */
+  /* ============================= */
+  const { data: order } = await supabaseAdmin
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .single();
+
+  if (!order) throw new Error("Order not found");
+
+  if (order.status === "delivered") {
+    throw new Error("Already delivered");
+  }
+
+  /* ============================= */
+  /* 🚫 PREVENT DOUBLE CREDIT */
+  /* ============================= */
+  const { data: alreadyCredited } = await supabaseAdmin
+    .from("wallet_transactions")
+    .select("id")
+    .eq("reference_id", orderId)
+    .eq("type", "credit");
+
+  if (!alreadyCredited?.length) {
+    /* ============================= */
+    /* 📦 GET ITEMS */
+    /* ============================= */
+    const { data: items } = await supabaseAdmin
+      .from("order_items")
+      .select("*")
+      .eq("order_id", orderId);
+
+    for (const item of items || []) {
+      const sellerId = item.seller_id;
+
+      const earning =
+        Number(item.cost_price || 0) *
+        Number(item.quantity || 1);
+
+      /* 🏦 WALLET */
+      const { data: wallet } = await supabaseAdmin
+        .from("wallets")
+        .select("*")
+        .eq("seller_id", sellerId)
+        .single();
+
+      if (!wallet) continue;
+
+      /* 💸 UPDATE */
+      await supabaseAdmin
+        .from("wallets")
+        .update({
+          balance: wallet.balance + earning,
+        })
+        .eq("seller_id", sellerId);
+
+      /* 📜 LEDGER */
+      await supabaseAdmin.from("wallet_transactions").insert({
+        seller_id: sellerId,
+        type: "credit",
+        amount: earning,
+        reference_id: orderId,
+        note: "Order delivered earning",
+      });
+    }
+  }
+
+  /* ✅ FINAL STATUS */
+  await supabaseAdmin
+    .from("orders")
+    .update({
+      status: "delivered",
+      delivered_at: new Date(),
+    })
+    .eq("id", orderId);
 }

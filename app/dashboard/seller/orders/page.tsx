@@ -1,13 +1,14 @@
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { updateOrderStatus } from "@/app/actions/seller";
+import { format } from "date-fns";
+import { Truck } from "lucide-react";
 
 type OrderItem = {
   id: string;
   order_id: string;
   quantity: number;
   price: number | null;
-  selling_price?: number | null;
-  base_price?: number | null;
+  cost_price?: number | null;
   products: any;
   orders: any;
 };
@@ -31,189 +32,132 @@ export default async function SellerOrdersPage() {
       order_id,
       quantity,
       price,
-      selling_price,
-      base_price,
-      products(*),
-      orders(*)
+      cost_price,
+      products(name, image),
+      orders!inner(
+        id,
+        order_code,
+        status,
+        payment_status,
+        payment_method,
+        created_at
+      )
     `)
     .eq("seller_id", user.id);
 
   if (error) {
-    console.error("FETCH ERROR:", error);
+    console.error(error);
     return <div>Error loading orders</div>;
   }
 
-  console.log("🧪 FETCHED ITEMS:", items);
-
   /* ============================= */
-  /* 🔥 GROUP BY ORDER */
+  /* 🔥 GROUP */
   /* ============================= */
-  const groupedOrders: Record<string, any> = {};
+  const grouped: Record<string, any> = {};
 
-  (items || []).forEach((item: OrderItem) => {
+  items?.forEach((item: any) => {
     if (!item.orders) return;
 
-    const orderId = item.order_id;
-
-    if (!groupedOrders[orderId]) {
-      groupedOrders[orderId] = {
+    if (!grouped[item.order_id]) {
+      grouped[item.order_id] = {
         ...item.orders,
         items: [],
       };
     }
 
-    groupedOrders[orderId].items.push(item);
+    grouped[item.order_id].items.push(item);
   });
 
-  /* ============================= */
-  /* ✅ SORT LATEST FIRST (FIXED) */
-  /* ============================= */
-  const sellerOrders = Object.values(groupedOrders).sort(
+  const orders = Object.values(grouped).sort(
     (a: any, b: any) =>
       new Date(b.created_at).getTime() -
       new Date(a.created_at).getTime()
   );
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto p-6 space-y-6">
 
-      {/* HEADER */}
-      <div>
-        <h1 className="text-3xl font-bold">Orders</h1>
-        <p className="text-gray-500">Manage your incoming orders</p>
-      </div>
+      {orders.map((order: any) => {
 
-      {/* EMPTY */}
-      {sellerOrders.length === 0 && (
-        <div className="bg-white p-10 rounded-xl text-center text-gray-500">
-          No orders yet
-        </div>
-      )}
-
-      {/* LIST */}
-      {sellerOrders.map((order: any) => {
-        const isPaid =
-          order.payment_method === "cod" ||
-          order.payment_status === "paid";
-
-        /* 💰 CORRECT SELLER EARNING */
-        const sellerTotal = (order.items || []).reduce(
-          (sum: number, item: OrderItem) => {
-            const price =
-              Number(item.base_price) || // ✅ seller earning
-              Number(item.price) ||
-              0;
-
-            return sum + item.quantity * price;
-          },
+        const sellerTotal = order.items.reduce(
+          (sum: number, item: any) =>
+            sum + (Number(item.cost_price) || 0) * item.quantity,
           0
         );
 
         return (
-          <div
-            key={order.id}
-            className="bg-white p-6 rounded-2xl shadow space-y-4 text-black"
-          >
+          <div key={order.id} className="bg-zinc-900 p-5 rounded-xl">
 
             {/* HEADER */}
-            <div className="flex justify-between items-center">
-              <h2 className="font-bold text-lg">
-                #{order.order_code || order.id?.slice(0, 8)}
-              </h2>
+            <div className="flex justify-between">
+              <div>
+                <p className="text-white font-semibold">
+                  #{order.order_code}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {format(new Date(order.created_at), "dd MMM")}
+                </p>
+              </div>
 
-              <div className="flex gap-2">
-                <span className="px-3 py-1 rounded bg-gray-100 text-xs">
-                  {order.status}
-                </span>
-
-                <span
-                  className={`px-3 py-1 rounded text-xs ${
-                    isPaid
-                      ? "bg-green-100 text-green-600"
-                      : "bg-red-100 text-red-600"
-                  }`}
-                >
-                  {isPaid ? "Paid" : "Unpaid"}
-                </span>
+              <div className="text-green-400 font-bold">
+                ₹{sellerTotal}
               </div>
             </div>
 
             {/* ITEMS */}
-            <div className="space-y-3">
-              {(order.items || []).map((item: OrderItem) => {
-                const price =
-                  Number(item.base_price) || // ✅ seller earning
-                  Number(item.price) ||
-                  0;
+            <div className="mt-4 space-y-2">
+              {order.items.map((item: any) => (
+                <div key={item.id} className="flex gap-3">
 
-                return (
-                  <div
-                    key={item.id}
-                    className="flex gap-4 border p-3 rounded"
-                  >
+                  <img
+                    src={item.products?.image || "/placeholder.png"}
+                    className="w-14 h-14 rounded object-cover"
+                  />
 
-                    <img
-                      src={item.products?.image || "/placeholder.png"}
-                      className="w-16 h-16 rounded object-cover"
-                    />
-
-                    <div className="flex-1">
-                      <p className="font-semibold">
-                        {item.products?.name || "Product"}
-                      </p>
-
-                      <p className="text-sm text-gray-500">
-                        Qty: {item.quantity}
-                      </p>
-
-                      <p className="text-sm">₹{price}</p>
-                    </div>
-
-                    <p className="font-semibold">
-                      ₹{item.quantity * price}
+                  <div className="flex-1">
+                    <p className="text-white text-sm">
+                      {item.products?.name}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      Qty: {item.quantity}
                     </p>
                   </div>
-                );
-              })}
+
+                  <div className="text-white text-sm">
+                    ₹{item.cost_price}
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {/* TOTAL */}
-            <div className="flex justify-between font-semibold text-lg">
-              <span>Your Earnings</span>
-              <span className="text-green-600">₹{sellerTotal}</span>
-            </div>
+          <div className="mt-4 flex gap-2">
 
-            {/* ACTIONS */}
-      <div className="flex gap-2">
+  {(order.status === "pending" || order.status === "placed") && (
+    <>
+      {/* ✅ ACCEPT */}
+      <form action={updateOrderStatus.bind(null, order.id, "accepted")}>
+        <button className="bg-green-600 px-3 py-1 rounded text-white">
+          Accept
+        </button>
+      </form>
 
-  {/* ✅ ACCEPT */}
-  {(order.status === "placed" || order.status === "pending") && (
-    <form action={updateOrderStatus.bind(null, order.id, "accepted")}>
-      <button className="bg-green-600 text-white px-4 py-2 rounded">
-        Accept
-      </button>
-    </form>
+      {/* ❌ REJECT */}
+      <form action={updateOrderStatus.bind(null, order.id, "rejected")}>
+        <button className="bg-red-600 px-3 py-1 rounded text-white">
+          Reject
+        </button>
+      </form>
+    </>
   )}
 
-  {/* ❌ REJECT */}
-  {(order.status === "placed" || order.status === "pending") && (
-    <form action={updateOrderStatus.bind(null, order.id, "rejected")}>
-      <button className="bg-red-600 text-white px-4 py-2 rounded">
-        Reject
-      </button>
-    </form>
-  )}
-
-  {/* 🕒 WAITING */}
   {order.status === "accepted" && (
-    <span className="text-yellow-600 font-medium">
-      Waiting for Admin 🚚
+    <span className="text-yellow-400 text-sm">
+      Waiting for shipment
     </span>
   )}
 
-  {/* ❌ REJECTED */}
   {order.status === "rejected" && (
-    <span className="text-red-600 font-medium">
+    <span className="text-red-400 text-sm">
       Order Rejected
     </span>
   )}
@@ -223,6 +167,15 @@ export default async function SellerOrdersPage() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function Stat({ title, value }: any) {
+  return (
+    <div className="bg-white p-5 rounded-xl shadow">
+      <p className="text-gray-500">{title}</p>
+      <h2 className="text-2xl font-bold">{value}</h2>
     </div>
   );
 }

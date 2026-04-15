@@ -17,56 +17,74 @@ export async function requestWithdraw(formData: FormData): Promise<void> {
   if (!user) throw new Error("Unauthorized");
 
   const amount = Number(formData.get("amount"));
-
   if (!amount || amount <= 0) {
     throw new Error("Invalid amount");
   }
 
-  /* 🔥 CHECK BANK VERIFIED */
+  /* 🏦 CHECK BANK */
   const { data: bank } = await supabase
     .from("bank_accounts")
     .select("*")
-    .eq("reseller_id", user.id)
+    .eq("seller_id", user.id)
     .single();
 
-  if (!bank) {
-    throw new Error("Add bank details first");
+  if (!bank || !bank.is_verified) {
+    throw new Error("Bank not verified");
   }
 
-  if (!bank.is_verified) {
-    throw new Error("Bank not verified by admin");
-  }
-
-  /* 💰 CHECK WALLET */
+  /* 💰 GET WALLET */
   const { data: wallet } = await supabase
     .from("wallets")
     .select("*")
-    .eq("reseller_id", user.id)
+    .eq("seller_id", user.id)
     .single();
 
-  if (!wallet || wallet.balance < amount) {
+  if (!wallet) throw new Error("Wallet not found");
+
+  const availableBalance = wallet.balance - wallet.locked_balance;
+
+  if (availableBalance < amount) {
     throw new Error("Insufficient balance");
   }
 
-  /* ❌ PREVENT MULTIPLE PENDING */
+  /* ❌ PREVENT MULTIPLE */
   const { data: existing } = await supabase
     .from("withdraw_requests")
     .select("*")
-    .eq("reseller_id", user.id)
+    .eq("seller_id", user.id)
     .eq("status", "pending");
 
-  if (existing && existing.length > 0) {
-    throw new Error("You already have a pending request");
+  if (existing?.length) {
+    throw new Error("Pending request exists");
   }
 
   /* ✅ CREATE REQUEST */
-  await supabase.from("withdraw_requests").insert({
-    reseller_id: user.id,
-    amount,
-    status: "pending",
-  });
+  const { data: withdraw } = await supabase
+    .from("withdraw_requests")
+    .insert({
+      seller_id: user.id,
+      amount,
+      status: "pending",
+    })
+    .select()
+    .single();
 
-  return;
+  /* 🔒 LOCK BALANCE */
+  await supabase
+    .from("wallets")
+    .update({
+      locked_balance: wallet.locked_balance + amount,
+    })
+    .eq("seller_id", user.id);
+
+  /* 📜 LEDGER ENTRY */
+  await supabase.from("wallet_transactions").insert({
+    seller_id: user.id,
+    type: "lock",
+    amount,
+    reference_id: withdraw.id,
+    note: "Withdraw request lock",
+  });
 }
 
 /* ============================= */
@@ -80,13 +98,13 @@ export async function saveBankDetails(userId: string, data: any) {
   }
 
   await supabaseAdmin.from("bank_accounts").upsert({
-    reseller_id: userId,
+    seller_id: userId,
     account_holder_name: data.name,
     account_number: data.accountNumber,
     ifsc_code: data.ifsc,
     bank_name: data.bankName || "",
     upi_id: data.upi || "",
-    is_verified: false, // 🔥 always false on update
+    is_verified: false,
   });
 }
 

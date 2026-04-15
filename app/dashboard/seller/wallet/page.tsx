@@ -1,5 +1,12 @@
 import { requestWithdraw } from "@/app/actions/wallet";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import {
+  Wallet,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Banknote,
+  CreditCard,
+} from "lucide-react";
 
 export default async function WalletPage() {
   const supabase = await getSupabaseServer();
@@ -16,7 +23,7 @@ export default async function WalletPage() {
   const { data: wallet } = await supabase
     .from("wallets")
     .select("*")
-    .eq("reseller_id", user.id)
+    .eq("seller_id", user.id)
     .maybeSingle();
 
   /* ============================= */
@@ -25,16 +32,16 @@ export default async function WalletPage() {
   const { data: bank } = await supabase
     .from("bank_accounts")
     .select("*")
-    .eq("reseller_id", user.id)
+    .eq("seller_id", user.id)
     .maybeSingle();
 
   /* ============================= */
   /* 📜 TRANSACTIONS */
   /* ============================= */
   const { data: transactions } = await supabase
-    .from("transactions")
+    .from("wallet_transactions")
     .select("*")
-    .eq("reseller_id", user.id)
+    .eq("seller_id", user.id)
     .order("created_at", { ascending: false });
 
   /* ============================= */
@@ -43,133 +50,206 @@ export default async function WalletPage() {
   const { data: withdraws } = await supabase
     .from("withdraw_requests")
     .select("*")
-    .eq("reseller_id", user.id)
+    .eq("seller_id", user.id)
     .order("created_at", { ascending: false });
 
+  const format = (n: number) =>
+    new Intl.NumberFormat("en-IN").format(Math.round(n));
+
+  const available =
+    (wallet?.balance || 0) - (wallet?.locked_balance || 0);
+
   return (
-    <div className="text-black space-y-8 max-w-4xl mx-auto">
+    <div className="max-w-7xl mx-auto p-6 space-y-8 text-white">
 
-      <h1 className="text-3xl font-bold">Wallet 💰</h1>
-
-      {/* 💰 BALANCE CARD */}
-      <div className="bg-black text-white p-6 rounded-2xl shadow">
-        <p className="text-gray-300">Available Balance</p>
-        <h2 className="text-4xl font-bold mt-1">
-          ₹{wallet?.balance ?? 0}
-        </h2>
+      {/* HEADER */}
+      <div>
+        <h1 className="text-2xl font-bold">Wallet 💰</h1>
+        <p className="text-zinc-400 text-sm">
+          Manage your earnings & withdrawals
+        </p>
       </div>
 
-      {/* ⚠️ BANK STATUS */}
-      {!bank?.is_verified && (
-        <div className="bg-yellow-100 text-yellow-700 p-3 rounded text-sm">
-          ⚠️ Add & verify bank details to enable withdrawals
+      {/* ============================= */}
+      {/* 💰 BALANCE */}
+      {/* ============================= */}
+      <div className="bg-gradient-to-r from-emerald-600 to-green-500 p-8 rounded-3xl shadow-xl flex justify-between items-center">
+
+        <div>
+          <p className="text-white/80 text-sm">Available Balance</p>
+          <h2 className="text-4xl font-bold mt-2">
+            ₹{format(available)}
+          </h2>
+
+          <p className="text-xs mt-2 text-white/70">
+            Total: ₹{format(wallet?.balance || 0)} | Locked: ₹{format(wallet?.locked_balance || 0)}
+          </p>
         </div>
-      )}
 
-      {/* 💸 WITHDRAW FORM */}
-      <div className="bg-white p-5 rounded-xl shadow">
-        <h2 className="font-semibold mb-3">Withdraw Money</h2>
+        <div className="flex items-center gap-2 text-sm">
+          <Wallet className="w-5 h-5" />
+          Secure Wallet
+        </div>
 
-        <form action={requestWithdraw} className="flex gap-2">
-          <input
-            type="number"
-            name="amount"
-            placeholder="Enter amount"
-            className="border p-2 rounded w-full"
-            required
-            disabled={!bank?.is_verified}
-          />
-
-          <button
-            disabled={!bank?.is_verified}
-            className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
-          >
-            Withdraw
-          </button>
-        </form>
       </div>
 
-      {/* 📜 TRANSACTIONS */}
-      <div className="bg-white p-5 rounded-xl shadow">
-        <h2 className="text-lg font-semibold mb-4">
-          Transactions
-        </h2>
+      {/* ============================= */}
+      {/* 💳 WITHDRAW + BANK */}
+      {/* ============================= */}
+      <div className="grid md:grid-cols-2 gap-6">
 
-        {transactions?.length === 0 && (
-          <p className="text-gray-500">No transactions yet</p>
-        )}
+        {/* WITHDRAW */}
+        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-3xl">
 
-        {transactions?.map((t: any) => (
-          <div
-            key={t.id}
-            className="flex justify-between items-center border-b py-3"
-          >
-            <div>
-              <p className="text-sm font-medium capitalize">
-                {t.type}
-              </p>
-              <p className="text-xs text-gray-500">
-                {new Date(t.created_at).toLocaleString()}
-              </p>
+          <h2 className="font-semibold mb-4 flex items-center gap-2">
+            <ArrowUpCircle className="w-5 h-5 text-emerald-400" />
+            Withdraw Money
+          </h2>
+
+          {!bank?.is_verified && (
+            <div className="bg-yellow-500/10 text-yellow-400 p-3 rounded-xl text-sm mb-4">
+              ⚠️ Bank not verified
             </div>
+          )}
 
-            <span
-              className={`font-bold ${
-                t.type === "credit"
-                  ? "text-green-600"
-                  : "text-red-500"
-              }`}
+          <form action={requestWithdraw} className="space-y-3">
+            <input
+              type="number"
+              name="amount"
+              placeholder="Enter amount"
+              className="w-full bg-zinc-800 border border-zinc-700 px-4 py-3 rounded-xl focus:ring-2 focus:ring-emerald-500 text-black"
+              required
+              disabled={!bank?.is_verified}
+            />
+
+            <button
+              disabled={!bank?.is_verified}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl"
             >
-              {t.type === "credit" ? "+" : "-"}₹{t.amount}
-            </span>
-          </div>
-        ))}
-      </div>
+              Withdraw
+            </button>
+          </form>
+        </div>
 
-      {/* 💸 WITHDRAW HISTORY */}
-      <div className="bg-white p-5 rounded-xl shadow">
-        <h2 className="text-lg font-semibold mb-4">
-          Withdraw History
-        </h2>
+        {/* BANK */}
+        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-3xl">
 
-        {withdraws?.length === 0 && (
-          <p className="text-gray-500">No withdraw requests</p>
-        )}
+          <h2 className="font-semibold mb-4 flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-blue-400" />
+            Bank Account
+          </h2>
 
-        {withdraws?.map((w: any) => (
-          <div
-            key={w.id}
-            className="flex justify-between items-center border-b py-3"
-          >
-            <div>
-              <p className="font-medium">₹{w.amount}</p>
-              <p className="text-xs text-gray-500">
-                {new Date(w.created_at).toLocaleString()}
+          {bank ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-white font-medium">
+                {bank.account_holder_name}
               </p>
-            </div>
+              <p className="text-zinc-400">
+                {bank.account_number}
+              </p>
+              <p className="text-zinc-400">
+                IFSC: {bank.ifsc_code}
+              </p>
 
-            <StatusBadge status={w.status} />
-          </div>
-        ))}
+              <StatusBadge status={bank.is_verified ? "verified" : "pending"} />
+            </div>
+          ) : (
+            <p className="text-zinc-500">
+              No bank added yet
+            </p>
+          )}
+        </div>
+
       </div>
+
+      {/* ============================= */}
+      {/* 📊 DATA */}
+      {/* ============================= */}
+      <div className="grid lg:grid-cols-3 gap-6">
+
+        {/* TRANSACTIONS */}
+        <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+
+          <h2 className="mb-4 font-semibold flex items-center gap-2">
+            <ArrowDownCircle className="w-5 h-5 text-green-400" />
+            Transactions
+          </h2>
+
+          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+            {transactions?.map((t: any) => (
+              <div
+                key={t.id}
+                className="flex justify-between bg-zinc-800 p-4 rounded-xl"
+              >
+                <div>
+                  <p className="text-sm capitalize">{t.type}</p>
+                  <p className="text-xs text-zinc-500">
+                    {new Date(t.created_at).toLocaleString()}
+                  </p>
+                </div>
+
+                <span
+                  className={`font-semibold ${
+                    t.type === "credit"
+                      ? "text-green-400"
+                      : t.type === "lock"
+                      ? "text-yellow-400"
+                      : "text-red-400"
+                  }`}
+                >
+                  {t.type === "credit" ? "+" : "-"}₹{format(t.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* WITHDRAW HISTORY */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+
+          <h2 className="mb-4 font-semibold flex items-center gap-2">
+            <Banknote className="w-5 h-5 text-yellow-400" />
+            Withdraws
+          </h2>
+
+          <div className="space-y-3 max-h-[400px] overflow-y-auto">
+            {withdraws?.map((w: any) => (
+              <div
+                key={w.id}
+                className="bg-zinc-800 p-3 rounded-xl"
+              >
+                <p className="font-medium">₹{format(w.amount)}</p>
+                <p className="text-xs text-zinc-500">
+                  {new Date(w.created_at).toLocaleString()}
+                </p>
+
+                <div className="mt-1">
+                  <StatusBadge status={w.status} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+
     </div>
   );
 }
 
-/* ============================= */
-/* 🎨 STATUS BADGE */
-/* ============================= */
+/* ================= STATUS ================= */
 function StatusBadge({ status }: any) {
   const map: any = {
-    pending: "bg-yellow-100 text-yellow-600",
-    approved: "bg-blue-100 text-blue-600",
-    paid: "bg-green-100 text-green-600",
-    rejected: "bg-red-100 text-red-600",
-    failed: "bg-red-100 text-red-600",
+    pending: "bg-yellow-500/10 text-yellow-400",
+    approved: "bg-blue-500/10 text-blue-400",
+    paid: "bg-green-500/10 text-green-400",
+    rejected: "bg-red-500/10 text-red-400",
+    failed: "bg-red-500/10 text-red-400",
+    verified: "bg-green-500/10 text-green-400",
   };
 
   return (
-    <span className={`px-2 py-1 rounded text-xs ${map[status]}`}>
+    <span className={`px-2 py-1 text-xs rounded ${map[status]}`}>
       {status}
     </span>
   );
