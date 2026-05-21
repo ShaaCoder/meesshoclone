@@ -15,7 +15,7 @@
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.100.0",
     "browser-image-compression": "^2.0.2",
-    "bwip-js": "^4.9.0",
+    "bwip-js": "^4.10.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.38.0",
@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bwip-js": "^3.2.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

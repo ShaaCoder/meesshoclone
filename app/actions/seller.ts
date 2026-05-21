@@ -5,7 +5,10 @@ import sharp from "sharp";
 import { generateSellerInvoice } from "./invoice";
 import { calculatePrice } from "@/lib/pricing";
 import { revalidatePath } from "next/cache";
-
+import {
+  createShipment,
+  getSellerPickupAddress,
+} from "@/services/shiprocket";
 
 /* ============================= */
 /* 🧠 TYPES */
@@ -775,123 +778,318 @@ async function syncMainOrderStatus(
 }
 export async function acceptOrder(
   orderId: string
-) {
-  const supabase =
-    await getSupabaseServer();
+): Promise<ActionResponse> {
+  try {
+    const supabase =
+      await getSupabaseServer();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    /* ============================= */
+    /* 🔐 AUTH */
+    /* ============================= */
 
-  if (!user) {
-    throw new Error(
-      "Unauthorized"
-    );
-  }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  /* ============================= */
-  /* 📦 GET ORDER */
-  /* ============================= */
+    if (!user) {
+      return {
+        success: false,
+        message: "Unauthorized",
+      };
+    }
 
-  const { data: order } =
-    await supabaseAdmin
+    /* ============================= */
+    /* 📦 FETCH ORDER */
+    /* ============================= */
+
+    const {
+      data: order,
+      error: orderError,
+    } = await supabaseAdmin
       .from("orders")
-      .select("*")
+      .select(`
+        *,
+        addresses (*)
+      `)
       .eq("id", orderId)
       .single();
 
-  if (!order) {
-    throw new Error(
-      "Order not found"
+    if (orderError || !order) {
+      return {
+        success: false,
+        message: "Order not found",
+      };
+    }
+
+    /* ============================= */
+    /* 🔐 SELLER CHECK */
+    /* ============================= */
+
+    if (
+      order.seller_id !== user.id
+    ) {
+      return {
+        success: false,
+        message:
+          "Unauthorized seller",
+      };
+    }
+
+    /* ============================= */
+    /* 🚫 VALIDATION */
+    /* ============================= */
+
+    if (
+      order.status !== "placed"
+    ) {
+      return {
+        success: false,
+        message:
+          "Only placed orders can be accepted",
+      };
+    }
+
+    /* ============================= */
+    /* 👤 CUSTOMER */
+    /* ============================= */
+
+    const {
+      data: customer,
+    } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .eq(
+        "id",
+        order.customer_id
+      )
+      .single();
+
+    if (!customer) {
+      return {
+        success: false,
+        message:
+          "Customer not found",
+      };
+    }
+
+    /* ============================= */
+    /* 📦 ORDER ITEMS */
+    /* ============================= */
+
+    const {
+      data: items,
+      error: itemsError,
+    } = await supabaseAdmin
+      .from("order_items")
+      .select("*")
+      .eq(
+        "order_id",
+        orderId
+      );
+
+    if (
+      itemsError ||
+      !items?.length
+    ) {
+      return {
+        success: false,
+        message:
+          "Order items not found",
+      };
+    }
+
+    /* ============================= */
+    /* 🏪 SELLER */
+    /* ============================= */
+
+    const {
+      data: seller,
+    } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+
+    if (!seller) {
+      return {
+        success: false,
+        message:
+          "Seller not found",
+      };
+    }
+
+    /* ============================= */
+    /* 📍 SELLER ADDRESS */
+    /* ============================= */
+
+    const sellerAddress =
+      await getSellerPickupAddress(
+        user.id
+      );
+
+    /* ============================= */
+    /* 🚚 CREATE SHIPMENT */
+    /* ============================= */
+
+    const shipment =
+      await createShipment({
+        order,
+
+        customer,
+
+        address:
+          order.addresses,
+
+        items,
+
+        seller: {
+          ...seller,
+          ...sellerAddress,
+        },
+      });
+
+    /* ============================= */
+    /* 🕒 TIME */
+    /* ============================= */
+
+    const now =
+      new Date().toISOString();
+
+    /* ============================= */
+    /* ✅ UPDATE MAIN ORDER */
+    /* ============================= */
+
+    const {
+      error: updateOrderError,
+    } = await supabaseAdmin
+      .from("orders")
+      .update({
+        status:
+          "processing",
+
+        accepted_at: now,
+
+        processing_at:
+          now,
+
+        shipment_id:
+          shipment.shipment_id,
+
+        awb_code:
+          shipment.awb_code,
+
+        courier_name:
+          shipment.courier_name,
+
+        tracking_url:
+          shipment.tracking_url,
+      })
+      .eq("id", orderId);
+
+    if (
+      updateOrderError
+    ) {
+      return {
+        success: false,
+        message:
+          updateOrderError.message,
+      };
+    }
+
+    /* ============================= */
+    /* ✅ UPDATE ORDER ITEMS */
+    /* ============================= */
+
+    const {
+      error:
+        updateItemsError,
+    } = await supabaseAdmin
+      .from("order_items")
+      .update({
+        status:
+          "processing",
+
+        accepted_at: now,
+
+        processing_at:
+          now,
+
+        tracking_id:
+          shipment.awb_code,
+
+        courier_name:
+          shipment.courier_name,
+      })
+      .eq(
+        "order_id",
+        orderId
+      );
+
+    if (
+      updateItemsError
+    ) {
+      return {
+        success: false,
+        message:
+          updateItemsError.message,
+      };
+    }
+
+    /* ============================= */
+    /* 🧾 GENERATE INVOICE */
+    /* ============================= */
+
+    try {
+      await generateSellerInvoice(
+        orderId
+      );
+    } catch (
+      invoiceError
+    ) {
+      console.error(
+        "INVOICE ERROR:",
+        invoiceError
+      );
+    }
+
+    /* ============================= */
+    /* ♻️ REVALIDATE */
+    /* ============================= */
+
+    revalidatePath(
+      "/dashboard/seller/orders"
     );
-  }
 
-  /* ============================= */
-  /* 🔐 SELLER CHECK */
-  /* ============================= */
-
-  if (
-    order.seller_id !== user.id
-  ) {
-    throw new Error(
-      "Unauthorized seller"
+    revalidatePath(
+      "/dashboard/user/orders"
     );
-  }
 
-  /* ============================= */
-  /* 🚫 VALIDATION */
-  /* ============================= */
-
-  if (
-    order.status !== "placed"
-  ) {
-    throw new Error(
-      "Only placed orders can be accepted"
+    revalidatePath(
+      "/dashboard/admin/orders"
     );
-  }
 
-  const now =
-    new Date().toISOString();
+    /* ============================= */
+    /* ✅ SUCCESS */
+    /* ============================= */
 
-  /* ============================= */
-  /* ✅ UPDATE ORDER */
-  /* ============================= */
+    return {
+      success: true,
 
-  const {
-    error: orderError,
-  } = await supabaseAdmin
-    .from("orders")
-    .update({
-      status: "accepted",
-
-      accepted_at: now,
-    })
-    .eq("id", orderId);
-
-  if (orderError) {
-    throw new Error(
-      orderError.message
+      message:
+        "Order accepted successfully",
+    };
+  } catch (error: any) {
+    console.error(
+      "ACCEPT ORDER ERROR:",
+      error
     );
+
+    return {
+      success: false,
+
+      message:
+        error?.message ||
+        "Failed to accept order",
+    };
   }
-
-  /* ============================= */
-  /* ✅ UPDATE ITEMS */
-  /* ============================= */
-
-  const {
-    error: itemsError,
-  } = await supabaseAdmin
-    .from("order_items")
-    .update({
-      status: "accepted",
-
-      accepted_at: now,
-    })
-    .eq("order_id", orderId);
-
-  if (itemsError) {
-    throw new Error(
-      itemsError.message
-    );
-  }
-
-  /* ============================= */
-  /* ♻️ REVALIDATE */
-  /* ============================= */
-
-  revalidatePath(
-    "/dashboard/seller/orders"
-  );
-
-  revalidatePath(
-    "/dashboard/user/orders"
-  );
-
-  revalidatePath(
-    "/dashboard/admin/orders"
-  );
-
-  return {
-    success: true,
-  };
 }

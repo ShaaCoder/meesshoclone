@@ -59,3 +59,30 @@ because:
 easier
 no warehouse needed
 Shiprocket supports directly
+
+
+
+
+
+==================================================
+
+Order Created
+      ↓
+Create Shipment (Shiprocket API)
+      ↓
+Shiprocket returns:
+   - AWB
+   - Courier
+   - Label URL
+      ↓
+Save in orders table
+      ↓
+Generate invoice PDF
+      ↓
+Barcode contains AWB
+      ↓
+Seller prints invoice
+      ↓
+Courier scans AWB
+      ↓
+Shipment tracked

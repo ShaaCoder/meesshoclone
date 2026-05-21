@@ -1,8 +1,10 @@
 import { getSupabaseServer } from "@/lib/supabase-server";
-
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-import { updateOrderStatus } from "@/app/actions/seller";
+import {
+  updateOrderStatus,
+  acceptOrder,
+} from "@/app/actions/seller";
 
 import { format } from "date-fns";
 
@@ -15,6 +17,8 @@ import {
   XCircle,
   Clock3,
   Truck,
+  Printer,
+  ExternalLink,
 } from "lucide-react";
 
 export default async function SellerOrdersPage() {
@@ -30,7 +34,7 @@ export default async function SellerOrdersPage() {
   }
 
   /* ============================= */
-  /* 📦 FETCH SELLER ORDER ITEMS */
+  /* 📦 FETCH SELLER ORDERS */
   /* ============================= */
 
   const {
@@ -46,10 +50,13 @@ export default async function SellerOrdersPage() {
       cost_price,
       status,
       accepted_at,
+      processing_at,
       shipped_at,
       delivered_at,
       cancelled_at,
       out_for_delivery_at,
+      tracking_id,
+      courier_name,
 
       products (
         id,
@@ -126,7 +133,7 @@ export default async function SellerOrdersPage() {
     Object.values(grouped);
 
   /* ============================= */
-  /* 🎨 STATUS UI */
+  /* 🎨 STATUS STYLES */
   /* ============================= */
 
   const getStatusStyles = (
@@ -134,15 +141,14 @@ export default async function SellerOrdersPage() {
   ) => {
     switch (status) {
       case "placed":
-      case "pending":
         return {
           color:
             "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
           icon: Clock3,
         };
 
-      case "accepted":
       case "processing":
+      case "accepted":
         return {
           color:
             "bg-blue-500/10 text-blue-400 border-blue-500/20",
@@ -223,9 +229,9 @@ export default async function SellerOrdersPage() {
           </h1>
 
           <p className="text-zinc-500 mt-2">
-            Manage and track
-            all customer
-            orders
+            Manage invoices,
+            shipments and
+            customer orders
           </p>
         </div>
 
@@ -288,7 +294,7 @@ export default async function SellerOrdersPage() {
                 key={
                   order.id
                 }
-                className="group bg-gradient-to-b from-zinc-900 to-zinc-950 border border-zinc-800 hover:border-zinc-700 rounded-[30px] overflow-hidden transition-all duration-300 hover:shadow-2xl"
+                className="group bg-gradient-to-b from-zinc-900 to-zinc-950 border border-zinc-800 hover:border-zinc-700 rounded-[30px] overflow-hidden transition-all duration-300"
               >
                 {/* TOP */}
 
@@ -404,7 +410,7 @@ export default async function SellerOrdersPage() {
                           key={
                             item.id
                           }
-                          className="bg-black/30 border border-zinc-800 hover:border-zinc-700 rounded-2xl p-5 transition"
+                          className="bg-black/30 border border-zinc-800 hover:border-zinc-700 rounded-2xl p-5"
                         >
                           <div className="flex flex-col lg:flex-row lg:items-center gap-5">
                             {/* IMAGE */}
@@ -475,19 +481,19 @@ export default async function SellerOrdersPage() {
                               {/* TRACKING */}
 
                               {order.awb_code && (
-                                <div className="mt-4 text-sm text-zinc-400 space-y-1">
-                                  <p>
-                                    AWB:{" "}
-                                    <span className="text-white font-medium">
+                                <div className="mt-5 bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 space-y-2">
+                                  <p className="text-sm text-zinc-400">
+                                    AWB:
+                                    <span className="text-white font-semibold ml-2">
                                       {
                                         order.awb_code
                                       }
                                     </span>
                                   </p>
 
-                                  <p>
-                                    Courier:{" "}
-                                    <span className="text-white font-medium">
+                                  <p className="text-sm text-zinc-400">
+                                    Courier:
+                                    <span className="text-white font-semibold ml-2">
                                       {order.courier_name ||
                                         "Shiprocket"}
                                     </span>
@@ -499,8 +505,10 @@ export default async function SellerOrdersPage() {
                                         order.tracking_url
                                       }
                                       target="_blank"
-                                      className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 mt-2"
+                                      className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 text-sm mt-2"
                                     >
+                                      <ExternalLink className="w-4 h-4" />
+
                                       Track
                                       Shipment
                                     </a>
@@ -541,9 +549,8 @@ export default async function SellerOrdersPage() {
                                 action={async () => {
                                   "use server";
 
-                                  await updateOrderStatus(
-                                    item.id,
-                                    "accepted"
+                                  await acceptOrder(
+                                    order.id
                                   );
                                 }}
                               >
@@ -573,24 +580,39 @@ export default async function SellerOrdersPage() {
                             </div>
                           )}
 
-                          {/* ACCEPTED */}
+                          {/* PROCESSING */}
 
-                          {item.status ===
-                            "accepted" && (
+                          {(item.status ===
+                            "processing" ||
+                            item.status ===
+                              "accepted") && (
                             <div className="mt-6 flex flex-wrap gap-3">
                               <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-5 py-3 rounded-2xl inline-flex items-center gap-3 font-semibold">
-                                <CheckCircle2 className="w-5 h-5" />
+                                <Package className="w-5 h-5" />
 
-                                Order
-                                Accepted
+                                Shipment
+                                Created
                               </div>
 
                               <div className="bg-zinc-800/80 border border-zinc-700 text-zinc-300 px-5 py-3 rounded-2xl inline-flex items-center gap-3 font-medium">
-                                Waiting
-                                for admin
-                                shipment
-                                creation
+                                Invoice
+                                Generated &
+                                Ready For
+                                Pickup
                               </div>
+
+                              {/* PRINT */}
+
+                              <a
+                                href={`/dashboard/seller/invoices/${order.id}`}
+                                target="_blank"
+                                className="bg-white text-black hover:bg-zinc-200 px-5 py-3 rounded-2xl inline-flex items-center gap-2 font-semibold transition"
+                              >
+                                <Printer className="w-5 h-5" />
+
+                                Print
+                                Invoice
+                              </a>
                             </div>
                           )}
 
@@ -603,12 +625,12 @@ export default async function SellerOrdersPage() {
                                 <Truck className="w-5 h-5" />
 
                                 Shipment
-                                Created
+                                Picked Up
                               </div>
 
                               <div className="bg-zinc-800/80 border border-zinc-700 text-zinc-300 px-5 py-3 rounded-2xl inline-flex items-center gap-3 font-medium">
                                 Order is
-                                in
+                                currently in
                                 transit
                               </div>
                             </div>
