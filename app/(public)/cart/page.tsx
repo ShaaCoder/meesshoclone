@@ -10,7 +10,7 @@ import { ArrowLeft, ShoppingCart } from "lucide-react";
 function getPrice(variant: any) {
   if (!variant) return 0;
 
-  if (Number(variant.price) > 0) return Number(variant.price);
+  if (Number(variant.selling_price) > 0) return Number(variant.selling_price);
 
   const fallback =
     Number(variant.cost_price || 0) +
@@ -35,7 +35,7 @@ export default async function CartPage() {
   /* ============================= */
   /* 📦 FETCH CART */
   /* ============================= */
-  const { data: cart } = await supabase
+  const { data: cart, error: cartError } = await supabase
     .from("cart")
     .select(`
       id,
@@ -43,11 +43,12 @@ export default async function CartPage() {
       products:product_id (
         id,
         name,
-        image
+        categories ( gst_percent ),
+        product_images ( url, is_primary )
       ),
       product_variants:variant_id (
         id,
-        price,
+        selling_price,
         cost_price,
         platform_margin,
         mrp
@@ -56,17 +57,55 @@ export default async function CartPage() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
+  const { data: addresses } = await supabase
+    .from("addresses")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (cartError) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-3xl mx-auto px-4 py-16">
+          <div className="bg-white border rounded-2xl p-6">
+            <h2 className="text-lg font-semibold">Cart unavailable</h2>
+            <p className="text-sm text-gray-600 mt-2">
+              {cartError.message}
+            </p>
+            <p className="text-xs text-gray-500 mt-3">
+              This usually means the `cart` table is missing in Supabase or RLS is blocking access.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const safeCart = cart || [];
+
   /* ============================= */
   /* 💰 TOTAL */
   /* ============================= */
-  const total =
-    cart?.reduce((sum: number, item: any) => {
-      const variant = Array.isArray(item.product_variants)
-        ? item.product_variants[0]
-        : item.product_variants;
+  let subtotal = 0;
+  let totalGst = 0;
 
-      return sum + item.quantity * getPrice(variant);
-    }, 0) || 0;
+  safeCart.forEach((item: any) => {
+    const variant = Array.isArray(item.product_variants)
+      ? item.product_variants[0]
+      : item.product_variants;
+    
+    const product = Array.isArray(item.products) ? item.products[0] : item.products;
+    const category = Array.isArray(product?.categories) ? product.categories[0] : product?.categories;
+    const gstPercent = Number(category?.gst_percent || 18);
+
+    const price = getPrice(variant);
+    const gstAmount = Math.round(((price * gstPercent) / 100) * item.quantity);
+
+    subtotal += price * item.quantity;
+    totalGst += gstAmount;
+  });
+
+  const total = subtotal + totalGst;
 
   /* ============================= */
   /* 🧾 UI */
@@ -90,14 +129,14 @@ export default async function CartPage() {
           <div />
         </div>
 
-        {cart?.length === 0 ? (
+        {safeCart.length === 0 ? (
           <EmptyCart />
         ) : (
           <div className="grid lg:grid-cols-12 gap-10">
 
             {/* ITEMS */}
             <div className="lg:col-span-7 space-y-6">
-              {cart?.map((item: any) => (
+              {safeCart.map((item: any) => (
                 <CartItem key={item.id} item={item} />
               ))}
             </div>
@@ -109,7 +148,12 @@ export default async function CartPage() {
 
                 <div className="flex justify-between mb-2">
                   <span>Subtotal</span>
-                  <span>₹{total}</span>
+                  <span>₹{subtotal}</span>
+                </div>
+
+                <div className="flex justify-between mb-2">
+                  <span>GST/Taxes</span>
+                  <span>₹{totalGst}</span>
                 </div>
 
                 <div className="flex justify-between mb-2">
@@ -127,7 +171,7 @@ export default async function CartPage() {
 
               <div className="bg-white p-6 rounded-xl shadow border">
                 <h2 className="font-semibold mb-4">Shipping Details</h2>
-                <CheckoutForm user={user} />
+                <CheckoutForm user={user} addresses={addresses || []} />
               </div>
             </div>
 

@@ -5,19 +5,40 @@ import { supabase } from "@/lib/supabase";
 /* TYPES */
 /* ============================= */
 
+type ProductVariant = {
+  id: string;
+  product_id: string;
+  cost_price?: number;
+  mrp?: number;
+  price?: number;
+  stock?: number;
+  size?: string | null;
+  color?: string | null;
+};
+
+type ProductImage = {
+  id: string;
+  product_id: string;
+  url: string;
+  is_primary?: boolean;
+};
+
 export interface Product {
   id: string;
   name: string;
-  slug: string;
+  slug?: string;
   category_id: string;
   created_at?: string;
+
+  status?: string;
+  approval_status?: string;
 
   image: string;
   minPrice: number;
   maxPrice: number;
 
-  product_variants: any[];
-  product_images: any[];
+  product_variants: ProductVariant[];
+  product_images: ProductImage[];
 }
 
 /* ============================= */
@@ -32,7 +53,7 @@ export function useProducts() {
     const fetchProducts = async () => {
       try {
         /* ============================= */
-        /* 🚀 FIXED QUERY (IMPORTANT) */
+        /* 🚀 QUERY */
         /* ============================= */
         const { data, error } = await supabase
           .from("products")
@@ -42,60 +63,57 @@ export function useProducts() {
             slug,
             category_id,
             created_at,
-            image,
             status,
-            product_variants!product_variants_product_id_fkey(*),
-            product_images!product_images_product_id_fkey(*)
+            approval_status,
+            product_variants(*),
+            product_images(*)
           `)
-          .eq("status", "approved"); // 🔥 only show live products
+          .eq("approval_status", "approved") // ✅ only approved
+          .eq("status", "active"); // ✅ only live
 
         if (error) throw error;
 
         /* ============================= */
         /* 🔥 PROCESS */
         /* ============================= */
-        const finalProducts: Product[] =
-          data?.map((p: any) => {
+        const finalProducts: Product[] = (data || [])
+          /* 🚫 REMOVE INVALID */
+          .filter((p: any) => {
             const variants = p.product_variants || [];
-            const images = p.product_images || [];
 
-            /* ============================= */
-            /* 💰 PRICE LOGIC */
-            /* ============================= */
+            if (!variants.length) return false;
+
+            return variants.some(
+              (v: any) =>
+                (v.price && v.price > 0) ||
+                (v.cost_price && v.cost_price > 0) ||
+                (v.mrp && v.mrp > 0)
+            );
+          })
+
+          /* 🔥 MAP */
+          .map((p: any): Product => {
+            const variants: ProductVariant[] = p.product_variants || [];
+            const images: ProductImage[] = p.product_images || [];
+
+            /* 💰 PRICE */
             const prices = variants
-              .map((v: any) => {
-                // 1️⃣ direct price
-                if (v.price && Number(v.price) > 0) {
-                  return Number(v.price);
-                }
-
-                // 2️⃣ cost + margin
-                const fallback =
-                  Number(v.cost_price || 0) +
-                  Number(v.platform_margin || 0);
-
-                if (fallback > 0) return fallback;
-
-                // 3️⃣ mrp fallback
-                if (v.mrp && Number(v.mrp) > 0) {
-                  return Number(v.mrp);
-                }
-
+              .map((v) => {
+                if (v.price && v.price > 0) return Number(v.price);
+                if (v.cost_price && v.cost_price > 0) return Number(v.cost_price);
+                if (v.mrp && v.mrp > 0) return Number(v.mrp);
                 return 0;
               })
-              .filter((n: number) => n > 0);
+              .filter((n) => n > 0);
 
-            const minPrice = prices.length ? Math.min(...prices) : 0;
-            const maxPrice = prices.length ? Math.max(...prices) : 0;
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
 
-            /* ============================= */
-            /* 🖼 IMAGE LOGIC */
-            /* ============================= */
+            /* 🖼 IMAGE */
             const image =
-              images.find((i: any) => i.is_primary)?.url ||
+              images.find((i) => i.is_primary)?.url ||
               images[0]?.url ||
-              p.image ||
-              "/placeholder.png";
+              "/placeholder.svg";
 
             return {
               id: p.id,
@@ -104,6 +122,9 @@ export function useProducts() {
               category_id: p.category_id,
               created_at: p.created_at,
 
+              status: p.status,
+              approval_status: p.approval_status,
+
               image,
               minPrice,
               maxPrice,
@@ -111,7 +132,7 @@ export function useProducts() {
               product_variants: variants,
               product_images: images,
             };
-          }) || [];
+          });
 
         setProducts(finalProducts);
       } catch (err) {

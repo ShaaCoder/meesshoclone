@@ -1,0 +1,7 @@
+1. Shiprocket return webhook
+2. Auto return tracking
+3. QC system
+4. Wallet refund engine
+5. Seller penalties
+6. Return analytics
+7. Fraud detection

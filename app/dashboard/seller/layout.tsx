@@ -1,4 +1,3 @@
-// app/dashboard/seller/layout.tsx
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import SellerSidebar from "@/components/dashboard/seller/SellerSidebar";
@@ -10,39 +9,34 @@ export default async function SellerLayout({
   children: React.ReactNode;
 }) {
   const supabase = await getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) return redirect("/login");
 
   const { data: profile } = await supabase
     .from("users")
-    .select("role, status")
+    .select("role")
     .eq("id", user.id)
     .single();
 
-  if (profile?.role !== "seller") {
-    return redirect("/dashboard");
-  }
+  /* ❗ IMPORTANT FIX */
+  if (!profile) return null;
 
-  if (profile?.status !== "approved") {
-    return (
-      <div className="p-10 text-center text-white bg-zinc-950 min-h-screen">
-        ⏳ Waiting for admin approval...
-      </div>
-    );
+  if (profile.role !== "seller") {
+    return redirect("/");
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-zinc-950">
-      {/* Sidebar - Fixed Width */}
+    <div className="flex h-screen bg-zinc-950 text-white">
       <SellerSidebar />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col">
         <SellerHeader />
 
-        {/* Scrollable Content */}
-        <main className="flex-1 overflow-auto bg-zinc-950 p-6 lg:p-8">
+        <main className="flex-1 overflow-auto p-6">
           {children}
         </main>
       </div>

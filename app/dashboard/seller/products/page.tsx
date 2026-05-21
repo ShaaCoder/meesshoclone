@@ -4,45 +4,74 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 export default async function Page() {
   const supabase = await getSupabaseServer();
 
+  /* ============================= */
+  /* 🔐 AUTH */
+  /* ============================= */
   const {
     data: { user },
+    error: userError,
   } = await supabase.auth.getUser();
 
-  if (!user) return <div>Unauthorized</div>;
+  if (userError || !user) {
+    console.error("AUTH ERROR:", userError);
+    return <div>Unauthorized</div>;
+  }
 
   /* ============================= */
   /* 📦 PRODUCTS */
   /* ============================= */
-  const { data: products, error } = await supabase
-    .from("products")
-    .select(`
-      id,
-      name,
-      slug,
-      status,
-      created_at,
-      image,
-      category_id,
-      categories(name),
-      catalogs(title),
-      product_variants!product_variants_product_id_fkey(*),
-      product_images!product_images_product_id_fkey(*)
-    `)
-    .eq("seller_id", user.id)
-    .neq("status", "deleted") // 🔥 IMPORTANT
-    .order("created_at", { ascending: false });
+  const { data: products, error: productError } = await supabase
+  .from("products")
+  .select(`
+    id,
+    name,
+    description,
+    status,
+    created_at,
+    category_id,
 
-  if (error) {
-    console.error("PRODUCT FETCH ERROR:", error);
+    categories!fk_category (
+      id,
+      name
+    ),
+
+    product_variants (
+      id,
+      size,
+      color,
+      stock,
+      cost_price,
+      mrp
+    ),
+
+    product_images (
+      url,
+      is_primary
+    )
+  `)
+  .eq("seller_id", user.id)
+  .neq("status", "deleted")
+  .order("created_at", { ascending: false });
+
+  if (productError) {
+    console.error("❌ PRODUCT FETCH ERROR:", productError);
   }
 
   /* ============================= */
   /* 📂 CATEGORIES */
   /* ============================= */
-  const { data: categories } = await supabase
+  const { data: categories, error: categoryError } = await supabase
     .from("categories")
-    .select("id, name");
+    .select("id, name")
+    .order("name", { ascending: true });
 
+  if (categoryError) {
+    console.error("❌ CATEGORY FETCH ERROR:", categoryError);
+  }
+
+  /* ============================= */
+  /* 🚀 FINAL RETURN */
+  /* ============================= */
   return (
     <ProductsClient
       products={products || []}

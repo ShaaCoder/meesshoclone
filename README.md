@@ -2,6 +2,12 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Supabase database setup (required)
+
+The app expects a `cart` table (variant-based cart items). If you see:
+`Could not find the table 'public.cart' in the schema cache`
+run the migration in `sql/001_create_cart.sql` inside Supabase SQL Editor.
+
 First, run the development server:
 
 ```bash
@@ -34,3 +40,16 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+
+
+
+
+
+<!-- Next step:
+
+Shiprocket return API
+Razorpay refunds
+warehouse verification
+pickup tracking automation -->

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateProductStatus } from "@/app/actions/admin";
+import { approveProduct, rejectProduct } from "@/app/actions/admin";
 import { useRouter } from "next/navigation";
 import { Check, X, Search } from "lucide-react";
 
@@ -10,32 +10,31 @@ export default function ProductsClient({ products }: any) {
   const router = useRouter();
   const [search, setSearch] = useState("");
 
-  /* 🔥 FORMAT ₹ */
-  const format = (n: number) => `₹${Math.round(n)}`;
-
-  /* 🔥 FILTER */
-  const filtered = products?.filter((p: any) =>
+  /* 🔍 FILTER */
+  const filtered = products.filter((p: any) =>
     p.name?.toLowerCase().includes(search.toLowerCase())
   );
 
   /* 🔥 SORT (Pending First) */
-  const sorted = filtered.sort((a: any, b: any) => {
-    if (a.status === "pending" && b.status !== "pending") return -1;
-    if (b.status === "pending" && a.status !== "pending") return 1;
+  const sorted = [...filtered].sort((a: any, b: any) => {
+    if (a.approval_status === "pending") return -1;
+    if (b.approval_status === "pending") return 1;
     return 0;
   });
 
-  const pending = products.filter((p: any) => p.status === "pending").length;
+  const pendingCount = products.filter(
+    (p: any) => p.approval_status === "pending"
+  ).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-black">
 
       {/* HEADER */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Product Approval</h1>
           <p className="text-gray-500 text-sm">
-            {pending} products need review
+            {pendingCount} products need review
           </p>
         </div>
 
@@ -54,11 +53,11 @@ export default function ProductsClient({ products }: any) {
       <div className="bg-white rounded-2xl border overflow-hidden">
 
         {sorted.map((p: any) => {
-const min = p.minPrice || 0;
-const max = p.maxPrice || 0;
+          const min = p.minPrice || 0;
+          const max = p.maxPrice || 0;
 
-const minProfit = p.minProfit || 0;
-const maxProfit = p.maxProfit || 0;
+          const minProfit = p.minProfit || 0;
+          const maxProfit = p.maxProfit || 0;
 
           return (
             <div
@@ -73,51 +72,52 @@ const maxProfit = p.maxProfit || 0;
                 </div>
 
                 <div>
-                  <p className="font-semibold text-gray-800">
-                    {p.name}
-                  </p>
+                  <p className="font-semibold">{p.name}</p>
                   <p className="text-xs text-gray-400">
                     {p.users?.name}
                   </p>
                 </div>
               </div>
 
-            {/* PRICE RANGE */}
-<div className="col-span-3 text-sm">
-  <p className="text-gray-400 text-xs">Price</p>
-  <p className="font-semibold">
-    ₹{min}
-    {max > min && ` - ₹${max}`}
-  </p>
-</div>
-{/* PROFIT */}
-<div className="col-span-2 text-sm">
-  <p className="text-gray-400 text-xs">Profit</p>
-  <p className="font-bold text-green-600">
-    ₹{minProfit}
-    {maxProfit > minProfit && ` - ₹${maxProfit}`}
-  </p>
-</div>
+              {/* PRICE */}
+              <div className="col-span-3 text-sm">
+                <p className="text-gray-400 text-xs">Price</p>
+                <p className="font-semibold">
+                  ₹{min}
+                  {max > min && ` - ₹${max}`}
+                </p>
+              </div>
 
-             <div className="col-span-2 text-sm">
-  <p className="text-gray-400 text-xs">Variants</p>
-  <p>{p.variants.length}</p>
-</div>
+              {/* PROFIT */}
+              <div className="col-span-2 text-sm">
+                <p className="text-gray-400 text-xs">Profit</p>
+                <p className="font-bold text-green-600">
+                  ₹{minProfit}
+                  {maxProfit > minProfit && ` - ₹${maxProfit}`}
+                </p>
+              </div>
+
+              {/* VARIANTS */}
+              <div className="col-span-2 text-sm">
+                <p className="text-gray-400 text-xs">Variants</p>
+                <p>{p.variants.length}</p>
+              </div>
 
               {/* STATUS */}
               <div className="col-span-1">
-                <Status status={p.status} />
+                <Status status={p.approval_status} />
               </div>
 
               {/* ACTIONS */}
               <div className="col-span-1 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition">
 
-                {p.status === "pending" && (
+                {p.approval_status === "pending" && (
                   <>
                     <button
+                      disabled={isPending}
                       onClick={() =>
                         startTransition(async () => {
-                          await updateProductStatus(p.id, "approved");
+                          await approveProduct(p.id);
                           router.refresh();
                         })
                       }
@@ -127,9 +127,10 @@ const maxProfit = p.maxProfit || 0;
                     </button>
 
                     <button
+                      disabled={isPending}
                       onClick={() =>
                         startTransition(async () => {
-                          await updateProductStatus(p.id, "rejected");
+                          await rejectProduct(p.id);
                           router.refresh();
                         })
                       }
@@ -140,7 +141,6 @@ const maxProfit = p.maxProfit || 0;
                   </>
                 )}
               </div>
-
             </div>
           );
         })}
@@ -155,16 +155,28 @@ const maxProfit = p.maxProfit || 0;
   );
 }
 
-/* STATUS */
+/* STATUS BADGE */
 function Status({ status }: any) {
   if (status === "approved")
-    return <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">Approved</span>;
+    return (
+      <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
+        Approved
+      </span>
+    );
 
   if (status === "pending")
-    return <span className="text-xs bg-yellow-100 text-yellow-600 px-2 py-1 rounded-full">Pending</span>;
+    return (
+      <span className="text-xs bg-yellow-100 text-yellow-600 px-2 py-1 rounded-full">
+        Pending
+      </span>
+    );
 
   if (status === "rejected")
-    return <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">Rejected</span>;
+    return (
+      <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">
+        Rejected
+      </span>
+    );
 
   return null;
 }

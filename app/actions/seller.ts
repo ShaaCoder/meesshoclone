@@ -1,17 +1,24 @@
 "use server";
-
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { redirect } from "next/navigation";
 import sharp from "sharp";
 import { generateSellerInvoice } from "./invoice";
+import { calculatePrice } from "@/lib/pricing";
+import { revalidatePath } from "next/cache";
+
 
 /* ============================= */
-/* 🧠 HELPERS */
+/* 🧠 TYPES */
 /* ============================= */
 type ActionResponse = {
   success: boolean;
   message?: string;
 };
+
+/* ============================= */
+/* 🧠 HELPERS */
+/* ============================= */
+
 function generateSlug(name: string) {
   return (
     name.toLowerCase().replace(/\s+/g, "-") +
@@ -40,10 +47,6 @@ async function validateSeller(userId: string) {
 
 async function compressImage(file: File) {
   try {
-    if (!file || !file.type.startsWith("image/")) {
-      throw new Error("Invalid image");
-    }
-
     const buffer = Buffer.from(await file.arrayBuffer());
 
     const compressed = await sharp(buffer)
@@ -54,8 +57,7 @@ async function compressImage(file: File) {
     return new File([new Uint8Array(compressed)], file.name, {
       type: "image/jpeg",
     });
-  } catch (err) {
-    console.error("❌ Compression error:", err);
+  } catch {
     return file;
   }
 }
@@ -69,10 +71,7 @@ async function uploadImage(file: File) {
     .from("products")
     .upload(fileName, file);
 
-  if (error) {
-    console.error("❌ Upload error:", error);
-    throw new Error("Image upload failed");
-  }
+  if (error) throw new Error(error.message);
 
   const { data } = supabase.storage
     .from("products")
@@ -82,32 +81,12 @@ async function uploadImage(file: File) {
 }
 
 /* ============================= */
-/* 📂 CATALOG */
+/* ➕ CREATE PRODUCT */
 /* ============================= */
 
-async function createCatalog(category_id: string, title: string, seller_id: string) {
-  const supabase = await getSupabaseServer();
-
-  const { data, error } = await supabase
-    .from("catalogs")
-    .insert({
-      category_id,
-      title,
-      seller_id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  return data;
-}
-
-/* ============================= */
-/* 🚀 CREATE PRODUCT */
-/* ============================= */
-
-export async function createProduct(formData: FormData): Promise<ActionResponse> {
+export async function createProduct(
+  formData: FormData
+): Promise<ActionResponse> {
   try {
     const supabase = await getSupabaseServer();
 
@@ -115,59 +94,64 @@ export async function createProduct(formData: FormData): Promise<ActionResponse>
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return { success: false, message: "Unauthorized" };
-    }
+    if (!user) return { success: false, message: "Unauthorized" };
 
     await validateSeller(user.id);
 
     const name = String(formData.get("name") || "").trim();
+    const description = String(formData.get("description") || "");
     const category_id = String(formData.get("category_id") || "");
     const variantsRaw = String(formData.get("variants") || "");
 
     if (!name || !category_id || !variantsRaw) {
-      return { success: false, message: "Please fill all required fields" };
+      return { success: false, message: "Missing fields" };
     }
 
-    let variants: any[] = [];
+    let variants: any[] = JSON.parse(variantsRaw);
 
-    try {
-      variants = JSON.parse(variantsRaw);
-    } catch {
-      return { success: false, message: "Invalid variants format" };
-    }
+    /* 🔥 GET CATEGORY MARGIN */
+    const { data: category } = await supabase
+      .from("categories")
+      .select("margin_percent")
+      .eq("id", category_id)
+      .single();
 
+    const margin = Number(category?.margin_percent || 25);
+
+    /* ✅ CLEAN + APPLY PRICING */
     const cleanVariants = variants
       .map((v) => {
-        const basePrice = Number(v.price || 0);
+        const cost_price = Number(v.cost_price || 0);
+
+        if (cost_price <= 0) return null;
+
+        const pricing = calculatePrice({
+          cost_price,
+          margin_percent: margin,
+        });
 
         return {
-          price: basePrice,
-          cost_price: basePrice,
-          platform_margin: 0,
+          cost_price,
           mrp: Number(v.mrp || 0),
           stock: Number(v.stock || 0),
           size: v.size || null,
           color: v.color || null,
+          ...pricing,
         };
       })
-      .filter((v) => v.price > 0 && v.stock > 0);
+      .filter(Boolean);
 
     if (!cleanVariants.length) {
-      return { success: false, message: "Add valid variants with price & stock" };
+      return { success: false, message: "Invalid variants" };
     }
 
-    const rawFiles = formData.getAll("images");
-
-    const files = rawFiles
-      .filter((f: any) => f instanceof File)
-      .filter((f: File) => f.size > 0 && f.type.startsWith("image/"));
+    /* 🖼 IMAGES */
+    const files = formData.getAll("images") as File[];
 
     if (!files.length) {
-      return { success: false, message: "Upload at least one image" };
+      return { success: false, message: "Upload images" };
     }
 
-    /* upload */
     const imageUrls = await Promise.all(
       files.map(async (file) => {
         const compressed = await compressImage(file);
@@ -175,26 +159,24 @@ export async function createProduct(formData: FormData): Promise<ActionResponse>
       })
     );
 
-    const catalog = await createCatalog(category_id, name, user.id);
-
+    /* 📦 PRODUCT */
     const { data: product, error } = await supabase
       .from("products")
       .insert({
         name,
+        description,
+        slug: generateSlug(name),
         seller_id: user.id,
         category_id,
-        catalog_id: catalog.id,
-        image: imageUrls[0],
-        slug: generateSlug(name),
-        status: "pending",
+        status: "active",
+        approval_status: "pending",
       })
       .select()
       .single();
 
-    if (!product || error) {
-      return { success: false, message: "Product creation failed" };
-    }
+    if (error) throw new Error(error.message);
 
+    /* 🔁 VARIANTS */
     await supabase.from("product_variants").insert(
       cleanVariants.map((v) => ({
         product_id: product.id,
@@ -202,6 +184,7 @@ export async function createProduct(formData: FormData): Promise<ActionResponse>
       }))
     );
 
+    /* 🖼 IMAGES */
     await supabase.from("product_images").insert(
       imageUrls.map((url, i) => ({
         product_id: product.id,
@@ -211,9 +194,9 @@ export async function createProduct(formData: FormData): Promise<ActionResponse>
     );
 
     return { success: true };
-  } catch (err) {
-    console.error("CREATE PRODUCT ERROR:", err);
-    return { success: false, message: "Something went wrong" };
+  } catch (err: any) {
+    console.error("CREATE ERROR:", err);
+    return { success: false, message: err.message };
   }
 }
 
@@ -221,146 +204,694 @@ export async function createProduct(formData: FormData): Promise<ActionResponse>
 /* ✏️ UPDATE PRODUCT */
 /* ============================= */
 
-export async function updateProduct(formData: FormData): Promise<ActionResponse> {
-  const supabase = await getSupabaseServer();
+export async function updateProduct(
+  formData: FormData
+): Promise<ActionResponse> {
+  try {
+    const supabase = await getSupabaseServer();
 
-  const id = String(formData.get("id") || "");
-  if (!id) throw new Error("Missing ID");
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  const name = String(formData.get("name") || "");
-  const description = String(formData.get("description") || "");
-  const category_id = String(formData.get("category_id") || "");
+    if (!user) return { success: false, message: "Unauthorized" };
 
-  const variantsRaw = String(formData.get("variants") || "[]");
-  let variants: any[] = JSON.parse(variantsRaw);
+    const id = String(formData.get("id"));
 
-  /* ============================= */
-  /* 🔥 FIXED UPDATE VARIANTS */
-  /* ============================= */
-  const cleanVariants = variants
-    .map((v) => {
-      const basePrice = Number(v.price || 0);
+    const { data: product } = await supabase
+      .from("products")
+      .select("seller_id, category_id")
+      .eq("id", id)
+      .single();
+
+    if (product?.seller_id !== user.id) {
+      return { success: false, message: "Not allowed" };
+    }
+
+    const variants = JSON.parse(
+      String(formData.get("variants") || "[]")
+    );
+
+    const { data: category } = await supabase
+      .from("categories")
+      .select("margin_percent")
+      .eq("id", product.category_id)
+      .single();
+
+    const margin = Number(category?.margin_percent || 25);
+
+    const cleanVariants = variants.map((v: any) => {
+      const cost_price = Number(v.cost_price || 0);
+
+      const pricing = calculatePrice({
+        cost_price,
+        margin_percent: margin,
+      });
 
       return {
-        price: basePrice, // ✅ FIX
-        cost_price: basePrice,
-        platform_margin: Number(v.platform_margin || 0),
+        product_id: id,
+        cost_price,
+        mrp: Number(v.mrp || 0),
         stock: Number(v.stock || 0),
-        size: v.size || null,
-        color: v.color || null,
+        size: v.size,
+        color: v.color,
+        ...pricing,
       };
-    })
-    .filter((v) => v.price > 0);
+    });
 
-  await supabase
-    .from("products")
-    .update({ name, description, category_id })
-    .eq("id", id);
+    await supabase.from("products").update({
+      name: formData.get("name"),
+      category_id: formData.get("category_id"),
+    }).eq("id", id);
 
-  await supabase
-    .from("product_variants")
-    .delete()
-    .eq("product_id", id);
+    await supabase
+      .from("product_variants")
+      .delete()
+      .eq("product_id", id);
 
-  await supabase.from("product_variants").insert(
-    cleanVariants.map((v) => ({
-      product_id: id,
-      ...v,
-    }))
-  );
+    await supabase.from("product_variants").insert(cleanVariants);
 
-  redirect("/dashboard/seller/products");
+    return { success: true };
+  } catch (err: any) {
+    console.error("UPDATE ERROR:", err);
+    return { success: false, message: err.message };
+  }
 }
 
 /* ============================= */
 /* 🗑 DELETE */
 /* ============================= */
 
-export async function deleteProduct(id: string) : Promise<ActionResponse> {
+export async function deleteProduct(id: string): Promise<ActionResponse> {
   const supabase = await getSupabaseServer();
 
-  const { error } = await supabase
+  await supabase
     .from("products")
-    .update({
-      status: "deleted",
-    })
+    .update({ status: "deleted" })
     .eq("id", id);
 
-  if (error) {
-    console.error("DELETE ERROR:", error);
-    throw new Error("Delete failed");
-  }
-
-  // no reload needed, redirect handles refresh
-  redirect("/dashboard/seller/products");
+  return { success: true };
 }
+
+/* ============================= */
+/* 📦 ORDER STATUS TYPES */
+/* ============================= */
+
+type OrderItemStatus =
+  | "placed"
+  | "accepted"
+  | "processing"
+  | "shipped"
+  | "out_for_delivery"
+  | "delivered"
+  | "cancelled";
+
+type MainOrderStatus =
+  | "placed"
+  | "accepted"
+  | "accepted"
+  | "shipped"
+  | "out_for_delivery"
+  | "delivered"
+  | "cancelled";
+
 /* ============================= */
 /* 📦 ORDER STATUS */
 /* ============================= */
 
-export async function updateOrderStatus(orderId: string, status: string) {
-  const supabase = await getSupabaseServer();
+export async function updateOrderStatus(
+  orderItemId: string,
+  newStatus: OrderItemStatus
+): Promise<ActionResponse> {
+  try {
+    const supabase =
+      await getSupabaseServer();
+
+    /* ============================= */
+    /* 🔐 AUTH */
+    /* ============================= */
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return {
+        success: false,
+        message: "Unauthorized",
+      };
+    }
+
+    /* ============================= */
+    /* ✅ SELLER ALLOWED STATUSES */
+    /* ============================= */
+
+    const allowedStatuses: OrderItemStatus[] =
+      [
+        "accepted",
+        "cancelled",
+      ];
+
+    if (
+      !allowedStatuses.includes(
+        newStatus
+      )
+    ) {
+      return {
+        success: false,
+        message:
+          "Seller cannot update this status",
+      };
+    }
+
+    /* ============================= */
+    /* 📦 FETCH ORDER ITEM */
+    /* ============================= */
+
+    const {
+      data: item,
+      error: fetchError,
+    } = await supabaseAdmin
+      .from("order_items")
+      .select(`
+        id,
+        order_id,
+        seller_id,
+        status
+      `)
+      .eq("id", orderItemId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error(
+        "FETCH ITEM ERROR:",
+        fetchError
+      );
+
+      return {
+        success: false,
+        message:
+          "Failed to fetch order item",
+      };
+    }
+
+    if (!item) {
+      return {
+        success: false,
+        message:
+          "Order item not found",
+      };
+    }
+
+    /* ============================= */
+    /* 🔐 OWNERSHIP CHECK */
+    /* ============================= */
+
+    if (
+      item.seller_id !== user.id
+    ) {
+      console.error({
+        authUser: user.id,
+        itemSeller:
+          item.seller_id,
+      });
+
+      return {
+        success: false,
+        message:
+          "You cannot update this order",
+      };
+    }
+
+    /* ============================= */
+    /* 🚫 STATUS FLOW VALIDATION */
+    /* ============================= */
+
+    const currentStatus =
+      item.status as OrderItemStatus;
+
+    const validTransitions: Record<
+      OrderItemStatus,
+      OrderItemStatus[]
+    > = {
+      placed: [
+        "accepted",
+        "cancelled",
+      ],
+
+      accepted: [],
+
+      processing: [],
+
+      shipped: [],
+
+      out_for_delivery: [],
+
+      delivered: [],
+
+      cancelled: [],
+    };
+
+    if (
+      !validTransitions[
+        currentStatus
+      ]?.includes(newStatus)
+    ) {
+      return {
+        success: false,
+        message: `Cannot change order from ${currentStatus} to ${newStatus}`,
+      };
+    }
+
+    /* ============================= */
+    /* 🧠 UPDATE DATA */
+    /* ============================= */
+
+    const now =
+      new Date().toISOString();
+
+    const updateData: any = {
+      status: newStatus,
+    };
+
+    /* ============================= */
+    /* 🕒 TIMESTAMPS */
+    /* ============================= */
+
+    switch (newStatus) {
+      case "accepted":
+        updateData.accepted_at =
+          now;
+        break;
+
+      case "cancelled":
+        updateData.cancelled_at =
+          now;
+        break;
+    }
+
+    /* ============================= */
+    /* ✅ UPDATE ORDER ITEM */
+    /* ============================= */
+
+    const {
+      error: updateError,
+    } = await supabaseAdmin
+      .from("order_items")
+      .update(updateData)
+      .eq("id", orderItemId);
+
+    if (updateError) {
+      console.error(
+        "UPDATE ITEM ERROR:",
+        updateError
+      );
+
+      return {
+        success: false,
+        message:
+          updateError.message,
+      };
+    }
+
+    /* ============================= */
+    /* 🔄 SYNC MAIN ORDER */
+    /* ============================= */
+
+    await syncMainOrderStatus(
+      item.order_id
+    );
+
+    /* ============================= */
+    /* 🧾 GENERATE INVOICE */
+    /* ============================= */
+
+    if (
+      newStatus === "accepted"
+    ) {
+      try {
+        await generateSellerInvoice(
+          item.order_id
+        );
+      } catch (invoiceError) {
+        console.error(
+          "INVOICE ERROR:",
+          invoiceError
+        );
+      }
+    }
+
+    /* ============================= */
+    /* ♻️ REVALIDATE */
+    /* ============================= */
+
+    revalidatePath(
+      "/dashboard/seller/orders"
+    );
+
+    revalidatePath(
+      "/dashboard/user/orders"
+    );
+
+    revalidatePath(
+      "/dashboard/admin/orders"
+    );
+
+    /* ============================= */
+    /* ✅ SUCCESS */
+    /* ============================= */
+
+    return {
+      success: true,
+      message:
+        "Order updated successfully",
+    };
+  } catch (err: any) {
+    console.error(
+      "ORDER STATUS ERROR:",
+      err
+    );
+
+    return {
+      success: false,
+      message:
+        err?.message ||
+        "Failed to update order",
+    };
+  }
+}
+
+/* ============================= */
+/* 🔄 SYNC MAIN ORDER STATUS */
+/* ============================= */
+
+/* ============================= */
+/* 🔄 SYNC MAIN ORDER STATUS */
+/* ============================= */
+
+async function syncMainOrderStatus(
+  orderId: string
+): Promise<void> {
+  try {
+    /* ============================= */
+    /* 📦 FETCH ORDER ITEMS */
+    /* ============================= */
+
+    const {
+      data: items,
+      error,
+    } = await supabaseAdmin
+      .from("order_items")
+      .select("status")
+      .eq("order_id", orderId);
+
+    if (error) {
+      console.error(
+        "FETCH ORDER ITEMS ERROR:",
+        error
+      );
+
+      return;
+    }
+
+    if (!items?.length) {
+      return;
+    }
+
+    /* ============================= */
+    /* 🧠 ALL ITEM STATUSES */
+    /* ============================= */
+
+    const statuses =
+      items.map(
+        (item) => item.status
+      ) || [];
+
+    /* ============================= */
+    /* 🎯 DEFAULT STATUS */
+    /* ============================= */
+
+    let orderStatus:
+      | "placed"
+      | "accepted"
+      | "processing"
+      | "shipped"
+      | "out_for_delivery"
+      | "delivered"
+      | "cancelled" =
+      "placed";
+
+    /* ============================= */
+    /* ✅ ALL DELIVERED */
+    /* ============================= */
+
+    if (
+      statuses.every(
+        (status) =>
+          status ===
+          "delivered"
+      )
+    ) {
+      orderStatus =
+        "delivered";
+    }
+
+    /* ============================= */
+    /* 🚚 OUT FOR DELIVERY */
+    /* ============================= */
+
+    else if (
+      statuses.some(
+        (status) =>
+          status ===
+          "out_for_delivery"
+      )
+    ) {
+      orderStatus =
+        "out_for_delivery";
+    }
+
+    /* ============================= */
+    /* 🚛 SHIPPED */
+    /* ============================= */
+
+    else if (
+      statuses.some(
+        (status) =>
+          status ===
+          "shipped"
+      )
+    ) {
+      orderStatus =
+        "shipped";
+    }
+
+    /* ============================= */
+    /* ✅ ACCEPTED */
+    /* ============================= */
+
+    else if (
+      statuses.some(
+        (status) =>
+          status ===
+          "accepted"
+      )
+    ) {
+      orderStatus =
+        "accepted";
+    }
+
+    /* ============================= */
+    /* 📦 PROCESSING */
+    /* ============================= */
+
+    else if (
+      statuses.some(
+        (status) =>
+          status ===
+          "processing"
+      )
+    ) {
+      orderStatus =
+        "processing";
+    }
+
+    /* ============================= */
+    /* ❌ ALL CANCELLED */
+    /* ============================= */
+
+    else if (
+      statuses.every(
+        (status) =>
+          status ===
+          "cancelled"
+      )
+    ) {
+      orderStatus =
+        "cancelled";
+    }
+
+    /* ============================= */
+    /* 🟢 DEFAULT PLACED */
+    /* ============================= */
+
+    else if (
+      statuses.every(
+        (status) =>
+          status ===
+          "placed"
+      )
+    ) {
+      orderStatus =
+        "placed";
+    }
+
+    /* ============================= */
+    /* ✅ UPDATE MAIN ORDER */
+    /* ============================= */
+
+    const {
+      error: updateError,
+    } = await supabaseAdmin
+      .from("orders")
+      .update({
+        status: orderStatus,
+      })
+      .eq("id", orderId);
+
+    if (updateError) {
+      console.error(
+        "SYNC STATUS UPDATE ERROR:",
+        updateError
+      );
+    }
+  } catch (err) {
+    console.error(
+      "SYNC MAIN ORDER ERROR:",
+      err
+    );
+  }
+}
+export async function acceptOrder(
+  orderId: string
+) {
+  const supabase =
+    await getSupabaseServer();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) throw new Error("Unauthorized");
-
-  /* ============================= */
-  /* 🔐 CHECK SELLER */
-  /* ============================= */
-  const { data: profile } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "seller") {
-    throw new Error("Only seller allowed");
+  if (!user) {
+    throw new Error(
+      "Unauthorized"
+    );
   }
 
   /* ============================= */
   /* 📦 GET ORDER */
   /* ============================= */
-  const { data: order } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("id", orderId)
-    .single();
 
-  if (!order) throw new Error("Order not found");
+  const { data: order } =
+    await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("id", orderId)
+      .single();
 
-  /* ============================= */
-  /* 🚨 BLOCK DELIVERED */
-  /* ============================= */
-  if (status === "delivered") {
-    throw new Error("Seller cannot mark as delivered");
+  if (!order) {
+    throw new Error(
+      "Order not found"
+    );
   }
 
   /* ============================= */
-  /* ✅ ALLOWED STATUS */
+  /* 🔐 SELLER CHECK */
   /* ============================= */
-  const allowed = ["accepted", "processing", "ready_to_ship"];
 
-  if (!allowed.includes(status)) {
-    throw new Error("Invalid status");
+  if (
+    order.seller_id !== user.id
+  ) {
+    throw new Error(
+      "Unauthorized seller"
+    );
   }
 
   /* ============================= */
-  /* 🔄 UPDATE */
+  /* 🚫 VALIDATION */
   /* ============================= */
-  await supabase
+
+  if (
+    order.status !== "placed"
+  ) {
+    throw new Error(
+      "Only placed orders can be accepted"
+    );
+  }
+
+  const now =
+    new Date().toISOString();
+
+  /* ============================= */
+  /* ✅ UPDATE ORDER */
+  /* ============================= */
+
+  const {
+    error: orderError,
+  } = await supabaseAdmin
     .from("orders")
     .update({
-      status,
+      status: "accepted",
+
+      accepted_at: now,
     })
     .eq("id", orderId);
 
-  /* ============================= */
-  /* 🧾 INVOICE */
-  /* ============================= */
-  if (status === "accepted") {
-    await generateSellerInvoice(orderId);
+  if (orderError) {
+    throw new Error(
+      orderError.message
+    );
   }
+
+  /* ============================= */
+  /* ✅ UPDATE ITEMS */
+  /* ============================= */
+
+  const {
+    error: itemsError,
+  } = await supabaseAdmin
+    .from("order_items")
+    .update({
+      status: "accepted",
+
+      accepted_at: now,
+    })
+    .eq("order_id", orderId);
+
+  if (itemsError) {
+    throw new Error(
+      itemsError.message
+    );
+  }
+
+  /* ============================= */
+  /* ♻️ REVALIDATE */
+  /* ============================= */
+
+  revalidatePath(
+    "/dashboard/seller/orders"
+  );
+
+  revalidatePath(
+    "/dashboard/user/orders"
+  );
+
+  revalidatePath(
+    "/dashboard/admin/orders"
+  );
+
+  return {
+    success: true,
+  };
 }

@@ -20,6 +20,11 @@ const navItems = [
     href: "/dashboard/user",
     icon: Package,
   },
+   {
+    label: "Banks & UPI",
+    href: "/dashboard/user/banks",
+    icon: Package,
+  },
   {
     label: "Profile",
     href: "/dashboard/user/profile",
@@ -41,8 +46,8 @@ const navItems = [
     icon: Heart,
   },
   {
-    label: "Shop",
-    href: "/",
+    label: "Refunds Accounts",
+    href: "/dashboard/user/refund-accounts",
     icon: ShoppingBag,
   },
   

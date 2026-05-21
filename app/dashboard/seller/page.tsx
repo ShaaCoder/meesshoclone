@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import SellerProductCard from "@/components/dashboard/seller/SellerProductCard";
 import Pagination from "@/components/ui/Pagination";
@@ -8,60 +9,70 @@ export default async function SellerPage({
   searchParams: Promise<{ page?: string }>;
 }) {
   const supabase = await getSupabaseServer();
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) return redirect("/login");
 
+  /* ============================= */
+  /* 📄 PAGINATION */
+  /* ============================= */
   const params = await searchParams;
-  const currentPage = parseInt(params.page || "1");
+  const currentPage = Number(params?.page || 1);
   const itemsPerPage = 9;
 
   /* ============================= */
-  /* 📦 FETCH PRODUCTS WITH VARIANTS */
+  /* 📦 PRODUCTS (FIXED) */
   /* ============================= */
-const { data: products, count } = await supabase
-  .from("products")
-  .select(`
-    *,
-    product_variants!product_variants_product_id_fkey (
-      price,
-      cost_price
+  const { data: products, count, error } = await supabase
+    .from("products")
+    .select(
+      `
+      *,
+      product_variants (
+        cost_price,
+        mrp,
+        stock
+      )
+    `,
+      { count: "exact" }
     )
-  `, { count: "exact" })
-  .eq("seller_id", user.id)
-  .neq("status", "deleted") // ✅ THIS LINE FIXES IT
-  .order("created_at", { ascending: false })
-  .range((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage - 1);
+    .eq("seller_id", user.id)
+    .neq("status", "deleted")
+    .order("created_at", { ascending: false })
+    .range(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage - 1
+    );
+
+  if (error) {
+    console.error("PRODUCT ERROR:", error);
+  }
 
   /* ============================= */
-  /* 💰 FETCH ORDER ITEMS */
+  /* 💰 EARNINGS (FIXED) */
   /* ============================= */
-  const { data: orderItems } = await supabase
+  const { data: sellerItems } = await supabase
     .from("order_items")
     .select(`
       quantity,
-      price,
+      final_price,
       cost_price,
-      order:orders(payment_status),
-      product:products(seller_id)
-    `);
-
-  const sellerItems = orderItems?.filter(
-    (i: any) => i.product?.seller_id === user.id
-  );
+      orders(payment_status)
+    `)
+    .eq("seller_id", user.id);
 
   let totalEarnings = 0;
   let pendingEarnings = 0;
 
   sellerItems?.forEach((item: any) => {
-    const selling = Number(item.price || 0);
+    const selling = Number(item.final_price || 0);
     const cost = Number(item.cost_price || 0);
-
     const profit = (selling - cost) * item.quantity;
 
-    if (item.order?.payment_status === "paid") {
+    if (item.orders?.payment_status === "paid") {
       totalEarnings += profit;
     } else {
       pendingEarnings += profit;
@@ -72,63 +83,42 @@ const { data: products, count } = await supabase
 
   return (
     <div className="flex-1 p-8 bg-zinc-950 text-white min-h-screen">
-      
-      {/* HEADER */}
-      <div className="mb-10">
-        <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-zinc-400 mt-2">
-          Welcome back! Here's what's happening with your store.
-        </p>
-      </div>
+
+      <h1 className="text-3xl font-bold mb-6">Seller Dashboard</h1>
 
       {/* STATS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-        
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <p className="text-zinc-400 text-sm">Total Earnings</p>
-          <p className="text-4xl font-bold text-emerald-500 mt-3">
-            ₹{totalEarnings.toLocaleString("en-IN")}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className="p-6 bg-zinc-900 rounded-xl">
+          <p>Total Earnings</p>
+          <p className="text-2xl text-green-400">
+            ₹{totalEarnings.toLocaleString()}
           </p>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <p className="text-zinc-400 text-sm">Pending Earnings</p>
-          <p className="text-4xl font-bold text-amber-500 mt-3">
-            ₹{pendingEarnings.toLocaleString("en-IN")}
+        <div className="p-6 bg-zinc-900 rounded-xl">
+          <p>Pending Earnings</p>
+          <p className="text-2xl text-yellow-400">
+            ₹{pendingEarnings.toLocaleString()}
           </p>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <p className="text-zinc-400 text-sm">Total Products</p>
-          <p className="text-4xl font-bold mt-3">{count || 0}</p>
+        <div className="p-6 bg-zinc-900 rounded-xl">
+          <p>Total Products</p>
+          <p className="text-2xl">{count || 0}</p>
         </div>
-
       </div>
 
-      {/* PRODUCTS HEADER */}
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">Your Products</h2>
-        <p className="text-zinc-500">
-          Showing {(currentPage - 1) * itemsPerPage + 1}–
-          {Math.min(currentPage * itemsPerPage, count || 0)} of {count}
-        </p>
-      </div>
-
-      {/* EMPTY */}
-      {products?.length === 0 ? (
-        <div className="text-center py-20 text-zinc-500">
-          You haven't added any products yet.
-        </div>
+      {/* PRODUCTS */}
+      {!products?.length ? (
+        <p>No products found</p>
       ) : (
         <>
-          {/* GRID */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {products?.map((product: any) => (
-              <SellerProductCard key={product.id} product={product} />
+          <div className="grid grid-cols-3 gap-6">
+            {products.map((p: any) => (
+              <SellerProductCard key={p.id} product={p} />
             ))}
           </div>
 
-          {/* PAGINATION */}
           {totalPages > 1 && (
             <Pagination
               currentPage={currentPage}

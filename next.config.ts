@@ -1,14 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   turbopack: {
-    root: "C:/Users/shaan/OneDrive/Desktop/yourshop/meeshocopy",
+    root: "C:/Users/shaan/OneDrive/Desktop/yourshop/newupdates/meeshocopy",
   },
 
   images: {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "yobayudahkjtlgolcuoh.supabase.co",
+        hostname: "xchetjeduucxdavfmhjy.supabase.co", // ✅ YOUR ACTUAL PROJECT
         pathname: "/storage/v1/object/public/**",
       },
       {
@@ -22,16 +22,13 @@ const nextConfig = {
       {
         protocol: "https",
         hostname: "images.pexels.com",
-      }, 
-      {
-        protocol: "https",
-        hostname: "example.com",
       },
     ],
   },
+
   experimental: {
     serverActions: {
-      bodySizeLimit: "10mb", // 🔥 increase limit
+      bodySizeLimit: "10mb",
     },
   },
 };

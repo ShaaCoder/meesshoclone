@@ -1,7 +1,7 @@
 import { razorpay } from "@/lib/razorpay";
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
-
+import { supabaseAdmin } from "@/lib/supabase-admin";
 export async function POST(req: Request) {
   try {
     const supabase = await getSupabaseServer();
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     /* ============================= */
     /* 📦 GET ORDER */
     /* ============================= */
-    const { data: order, error } = await supabase
+    const { data: order, error } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("id", orderId)
@@ -80,26 +80,44 @@ export async function POST(req: Request) {
     console.log("🧾 RAZORPAY ORDER 👉", razorpayOrder);
 
     /* ============================= */
-    /* 💾 SAVE RAZORPAY ORDER ID */
+    /* 💾 SAVE PAYMENT (DB-SAFE) */
     /* ============================= */
-    const { data: updatedOrder, error: updateError } = await supabase
-      .from("orders")
-      .update({
-        razorpay_order_id: razorpayOrder.id,
-      })
-      .eq("id", orderId) // ✅ FIXED (IMPORTANT)
-      .select()
-      .maybeSingle();
+    const { data: existingPayments } = await supabaseAdmin
+      .from("payments")
+      .select("id")
+      .eq("order_id", orderId)
+      .limit(1);
 
-    if (updateError) {
-      console.error("❌ UPDATE ERROR:", updateError);
+    const existingPayment = existingPayments?.[0];
+    let paymentUpsertError;
+
+    if (existingPayment) {
+      const { error } = await supabaseAdmin
+        .from("payments")
+        .update({
+          razorpay_order_id: razorpayOrder.id,
+          status: "created",
+        })
+        .eq("id", existingPayment.id);
+      paymentUpsertError = error;
+    } else {
+      const { error } = await supabaseAdmin
+        .from("payments")
+        .insert({
+          order_id: orderId,
+          razorpay_order_id: razorpayOrder.id,
+          status: "created",
+        });
+      paymentUpsertError = error;
+    }
+
+    if (paymentUpsertError) {
+      console.error("❌ PAYMENT UPSERT ERROR:", paymentUpsertError);
       return NextResponse.json(
-        { error: "Failed to update order" },
+        { error: "Failed to save payment record" },
         { status: 500 }
       );
     }
-
-    console.log("✅ UPDATED ORDER 👉", updatedOrder);
 
     /* ============================= */
     /* 🚀 RESPONSE */

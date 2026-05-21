@@ -19,7 +19,7 @@ export default function ProductCard({ product }: any) {
 
         {/* IMAGE */}
         <img
-          src={product.image || "/placeholder.png"}
+          src={product.image || "/placeholder.svg"}
           className="w-full h-48 object-cover"
           alt={product.name}
         />

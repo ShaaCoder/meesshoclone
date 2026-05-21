@@ -19,6 +19,7 @@ const links = [
   { href: "/dashboard/seller", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/seller/products", label: "Products", icon: Package },
   { href: "/dashboard/seller/orders", label: "Orders", icon: ShoppingCart },
+  { href: "/dashboard/seller/returns", label: "Returns", icon: ShoppingCart },
   { href: "/dashboard/seller/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/seller/wallet", label: "Wallet", icon: Wallet },
   { href: "/dashboard/seller/invoices", label: "Invoices", icon: FileText },

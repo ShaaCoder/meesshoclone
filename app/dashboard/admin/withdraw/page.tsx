@@ -30,12 +30,18 @@ export default async function WithdrawPage() {
   /* ============================= */
   /* 📦 FETCH DATA (PARALLEL) */
   /* ============================= */
-  const { data: requests, error } = await supabaseAdmin
+  let { data: requests, error } = await supabaseAdmin
     .from("withdraw_requests")
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (error) throw new Error("Failed to fetch withdraws");
+  if (error) {
+    if (error.code === "PGRST205") {
+      requests = [];
+    } else {
+      throw new Error(`Failed to fetch withdraws: ${error.message}`);
+    }
+  }
 
   const sellerIds = [...new Set(requests?.map((r: any) => r.seller_id))];
 

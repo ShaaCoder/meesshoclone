@@ -1,209 +1,230 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Image from "next/image";
 import VariantSelector from "@/components/VariantSelector";
 import AddToCartButton from "./AddToCartButton";
 import BuyNowButton from "@/components/BuyNowButton";
 import WishlistButton from "@/components/WishlistButton";
 
-export default function ProductClient({ product, isWishlisted }: any) {
+export default function ProductClient({
+  product,
+  isWishlisted,
+}: any) {
   /* ============================= */
-  /* ✅ VARIANT */
+  /* 🛑 SAFETY */
   /* ============================= */
-  const hasVariants = product.product_variants?.length > 0;
 
-  const [selectedVariant, setSelectedVariant] = useState(
-    hasVariants ? product.product_variants[0] : null
-  );
+  if (!product) {
+    return (
+      <div className="p-10 text-center text-red-500">
+        Product not available
+      </div>
+    );
+  }
+
+  /* ============================= */
+  /* 📦 DATA */
+  /* ============================= */
+
+  const variants = product.product_variants || [];
+  const hasVariants = variants.length > 0;
+
+  const [selectedVariant, setSelectedVariant] = useState<any>(null);
 
   /* ============================= */
   /* 🖼 IMAGES */
   /* ============================= */
+
   const images =
-    product.product_images?.length > 0
-      ? product.product_images.map((img: any) => img.url)
-      : [product.image || "/placeholder.png"];
+    product.product_images?.map((i: any) => i?.url).filter(Boolean) || [];
 
-  const [selectedImage, setSelectedImage] = useState(images[0]);
+  const safeImages =
+    images.length > 0 ? images : ["/placeholder.svg"];
+
+  const [selectedImage, setSelectedImage] = useState(
+    safeImages[0]
+  );
 
   /* ============================= */
-  /* 💰 PRICE */
+  /* 💰 PRICE ENGINE (FINAL FIX) */
   /* ============================= */
-  const price = Number(
-    selectedVariant?.price ||
-      (selectedVariant?.cost_price || 0) +
-        (selectedVariant?.platform_margin || 0) ||
-      product?.product_variants?.[0]?.price ||
+
+  const getVariantPrice = (v: any) => {
+    if (!v) return 0;
+
+    return (
+      Number(v.selling_price) || // ✅ primary
+      Number(v.cost_price) || // fallback
       0
-  );
+    );
+  };
 
-  const mrp = Number(
-    selectedVariant?.mrp || Math.round(price * 1.3)
-  );
+  // ✅ MIN PRICE (important)
+  const minPrice = useMemo(() => {
+    if (!variants.length) return 0;
+
+    const prices = variants
+      .map(getVariantPrice)
+      .filter((p) => p > 0);
+
+    return prices.length ? Math.min(...prices) : 0;
+  }, [variants]);
+
+  // ✅ CURRENT PRICE
+  const price = selectedVariant
+    ? getVariantPrice(selectedVariant)
+    : minPrice;
+
+  /* ============================= */
+  /* 💰 MRP & DISCOUNT */
+  /* ============================= */
+
+  const mrp =
+    selectedVariant?.mrp && selectedVariant.mrp > price
+      ? Number(selectedVariant.mrp)
+      : price > 0
+      ? Math.round(price * 1.2)
+      : 0;
 
   const discount =
-    mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0;
+    mrp > price
+      ? Math.round(((mrp - price) / mrp) * 100)
+      : 0;
+
+  const stock = selectedVariant?.stock ?? 0;
 
   /* ============================= */
-  /* 📦 STOCK */
+  /* 🚀 UI */
   /* ============================= */
-  const stock =
-    selectedVariant?.stock ??
-    product?.product_variants?.[0]?.stock ??
-    0;
 
   return (
     <div className="bg-gray-50 min-h-screen pb-24">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid md:grid-cols-2 gap-10 lg:gap-16">
+      <div className="max-w-7xl mx-auto px-4 py-8 grid md:grid-cols-2 gap-10">
 
-          {/* ================= IMAGE ================= */}
-          <div className="space-y-4">
+        {/* IMAGE */}
+        <div>
+          <div className="relative aspect-square bg-white rounded-2xl overflow-hidden">
 
-            <div className="relative aspect-square bg-white rounded-3xl overflow-hidden shadow-md">
-
-              {/* ❤️ WISHLIST (FIXED) */}
-              <div className="absolute top-4 right-4 z-10">
-                <WishlistButton
-                  productId={product.id}
-                  initial={isWishlisted}
-                />
-              </div>
-
-              {/* DISCOUNT */}
-              {discount > 5 && (
-                <div className="absolute top-4 left-4 bg-red-500 text-white text-xs px-3 py-1 rounded-full shadow">
-                  {discount}% OFF
-                </div>
-              )}
-
-              <Image
-                src={selectedImage}
-                alt={product.name}
-                fill
-                className="object-cover"
+            <div className="absolute top-3 right-3 z-10">
+              <WishlistButton
+                productId={product.id}
+                initial={isWishlisted}
               />
             </div>
 
-            {/* THUMBNAILS */}
-            <div className="flex gap-3 overflow-x-auto">
-              {images.map((img: string, i: number) => (
-                <img
-                  key={i}
-                  src={img}
-                  onClick={() => setSelectedImage(img)}
-                  className={`h-20 w-20 object-cover rounded-lg cursor-pointer border-2 transition ${
-                    selectedImage === img
-                      ? "border-black scale-105"
-                      : "border-transparent"
-                  }`}
-                />
-              ))}
-            </div>
-
-            {/* TRUST BADGES */}
-            <div className="flex gap-4 text-xs text-gray-500">
-              <span>🚚 Free Delivery</span>
-              <span>💵 COD Available</span>
-              <span>🔁 Easy Returns</span>
-            </div>
+            <Image
+              src={selectedImage}
+              alt={product.name}
+              fill
+              className="object-cover"
+              onError={() => setSelectedImage("/placeholder.svg")}
+              sizes="(max-width: 768px) 100vw, 50vw"
+            />
           </div>
 
-          {/* ================= DETAILS ================= */}
-          <div className="space-y-6">
-
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-              {product.name}
-            </h1>
-
-            {/* PRICE CARD */}
-            <div className="bg-white p-4 rounded-2xl shadow-sm border space-y-2">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl font-bold text-black">
-                  ₹{price || "N/A"}
-                </span>
-
-                {mrp > price && (
-                  <span className="text-lg text-gray-400 line-through">
-                    ₹{mrp}
-                  </span>
-                )}
-              </div>
-
-              {discount > 0 && (
-                <p className="text-green-600 text-sm font-semibold">
-                  Save ₹{mrp - price} ({discount}% OFF)
-                </p>
-              )}
-            </div>
-
-            {/* STOCK */}
-            {stock > 0 ? (
-              <div className="bg-yellow-50 border border-yellow-200 text-sm px-4 py-2 rounded-xl w-fit">
-                🔥 Only {stock} items left
-              </div>
-            ) : (
-              <div className="bg-red-50 border border-red-200 text-sm px-4 py-2 rounded-xl w-fit text-red-600">
-                Out of Stock
-              </div>
-            )}
-
-            {/* DESCRIPTION */}
-            <p className="text-gray-600 leading-relaxed">
-              {product.description}
-            </p>
-
-            {/* VARIANTS */}
-            {hasVariants ? (
-              <div className="bg-white p-4 rounded-2xl shadow-sm border">
-                <h3 className="font-semibold mb-3">Select Option</h3>
-                <VariantSelector
-                  variants={product.product_variants}
-                  onSelect={setSelectedVariant}
-                />
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400">
-                No variants available
-              </p>
-            )}
-
-            {/* ACTION BUTTONS */}
-            <div className="flex flex-col gap-3 pt-2">
-              <AddToCartButton
-                productId={product.id}
-                variantId={selectedVariant?.id}
-                disabled={stock === 0 || (hasVariants && !selectedVariant)}
-                className="w-full py-4 text-lg bg-black text-white rounded-xl hover:opacity-90 transition disabled:opacity-50"
+          {/* THUMBNAILS */}
+          <div className="flex gap-2 mt-3">
+            {safeImages.map((img: string, i: number) => (
+              <Image
+                key={i}
+                src={img}
+                alt="thumb"
+                width={64}
+                height={64}
+                onClick={() => setSelectedImage(img)}
+                className={`rounded cursor-pointer border ${
+                  selectedImage === img
+                    ? "border-black"
+                    : "border-transparent"
+                }`}
               />
-
-              <BuyNowButton
-                productId={product.id}
-                variantId={selectedVariant?.id}
-                disabled={stock === 0 || (hasVariants && !selectedVariant)}
-                className="w-full py-4 text-lg bg-yellow-400 text-black rounded-xl font-semibold hover:bg-yellow-500 transition disabled:opacity-50"
-              />
-            </div>
-
+            ))}
           </div>
         </div>
-      </div>
 
-      {/* MOBILE BAR */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-3 flex gap-3 md:hidden shadow-lg">
-        <button
-          disabled={stock === 0 || (hasVariants && !selectedVariant)}
-          className="flex-1 border rounded-xl py-3 disabled:opacity-50"
-        >
-          Add to Cart
-        </button>
-        <button
-          disabled={stock === 0 || (hasVariants && !selectedVariant)}
-          className="flex-1 bg-black text-white rounded-xl py-3 disabled:opacity-50"
-        >
-          Buy Now
-        </button>
+        {/* DETAILS */}
+        <div className="space-y-4">
+
+          <h1 className="text-2xl font-bold">
+            {product.name}
+          </h1>
+
+          {/* 💰 PRICE */}
+          <div>
+            <span className="text-2xl font-bold">
+              {price > 0 ? `₹${price}` : "Price unavailable"}
+            </span>
+
+            {mrp > price && (
+              <span className="ml-2 line-through text-gray-400">
+                ₹{mrp}
+              </span>
+            )}
+          </div>
+
+          {/* 👇 STARTING PRICE LABEL */}
+          {!selectedVariant && variants.length > 1 && (
+            <p className="text-sm text-gray-500">
+              Starting from ₹{minPrice}
+            </p>
+          )}
+
+          {/* DISCOUNT */}
+          {discount > 0 && (
+            <p className="text-green-600 text-sm">
+              {discount}% OFF
+            </p>
+          )}
+
+          {/* STOCK */}
+          {selectedVariant ? (
+            stock > 0 ? (
+              <p className="text-green-600 text-sm">
+                In Stock ({stock})
+              </p>
+            ) : (
+              <p className="text-red-500 text-sm">
+                Out of Stock
+              </p>
+            )
+          ) : (
+            <p className="text-gray-500 text-sm">
+              Select variant to check stock
+            </p>
+          )}
+
+          {/* DESCRIPTION */}
+          <p className="text-gray-600">
+            {product.description}
+          </p>
+
+          {/* VARIANTS */}
+          {hasVariants && (
+            <VariantSelector
+              variants={variants}
+              onSelect={(variant: any) =>
+                setSelectedVariant(variant)
+              }
+            />
+          )}
+
+          {/* ACTIONS */}
+          <div className="flex gap-3 pt-4">
+            <AddToCartButton
+              productId={product.id}
+              variantId={selectedVariant?.id}
+              disabled={!selectedVariant || stock <= 0}
+            />
+
+            <BuyNowButton
+              productId={product.id}
+              variantId={selectedVariant?.id}
+              disabled={!selectedVariant || stock <= 0}
+            />
+          </div>
+
+        </div>
       </div>
     </div>
   );

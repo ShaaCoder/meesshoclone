@@ -1,8 +1,7 @@
 import crypto from "crypto";
-import { getSupabaseServer } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function POST(req: Request) {
-  const supabase = await getSupabaseServer();
 
   /* ============================= */
   /* 🔐 VERIFY SIGNATURE */
@@ -35,7 +34,7 @@ export async function POST(req: Request) {
     const razorpay_order_id = payment.order_id;
 
     /* 🔍 GET ORDER */
-    const { data: order } = await supabase
+    const { data: order } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("razorpay_order_id", razorpay_order_id)
@@ -54,9 +53,9 @@ export async function POST(req: Request) {
     /* ============================= */
     /* 📦 GET ORDER ITEMS */
     /* ============================= */
-    const { data: items } = await supabase
+    const { data: items } = await supabaseAdmin
       .from("order_items")
-      .select("quantity, price, cost_price")
+      .select("quantity, final_price, cost_price")
       .eq("order_id", order.id);
 
     if (!items || items.length === 0) {
@@ -73,7 +72,7 @@ export async function POST(req: Request) {
     for (const item of items) {
       const qty = Number(item.quantity || 0);
       const cost = Number(item.cost_price || 0);
-      const selling = Number(item.price || 0);
+      const selling = Number(item.final_price || 0);
 
       sellerTotal += cost * qty;
       profitTotal += (selling - cost) * qty;
@@ -85,7 +84,7 @@ export async function POST(req: Request) {
     /* ============================= */
     /* ✅ UPDATE ORDER */
     /* ============================= */
-    await supabase
+    await supabaseAdmin
       .from("orders")
       .update({
         payment_status: "paid",
@@ -97,7 +96,7 @@ export async function POST(req: Request) {
     /* ============================= */
     /* 💾 SAVE PAYMENT */
     /* ============================= */
-    await supabase.from("payments").insert({
+    await supabaseAdmin.from("payments").insert({
       order_id: order.id,
       razorpay_order_id,
       razorpay_payment_id: payment.id,
@@ -114,7 +113,7 @@ export async function POST(req: Request) {
     const payment = event.payload.payment.entity;
     const razorpay_order_id = payment.order_id;
 
-    await supabase
+    await supabaseAdmin
       .from("orders")
       .update({
         payment_status: "failed",

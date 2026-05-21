@@ -19,64 +19,65 @@ export async function addToCart(
   if (!user) throw new Error("Login required");
 
   if (!variantId) {
-    throw new Error("Please select size / variant");
+    throw new Error("Select variant");
   }
 
   /* ============================= */
-  /* 🔍 VALIDATE PRODUCT */
+  /* 🔍 PRODUCT CHECK */
   /* ============================= */
   const { data: product } = await supabase
     .from("products")
-    .select("id, status")
+    .select("id, status, approval_status")
     .eq("id", productId)
     .single();
 
-  if (!product || product.status !== "approved") {
+  if (
+    !product ||
+    product.status !== "active" ||
+    product.approval_status !== "approved"
+  ) {
     throw new Error("Product not available");
   }
 
   /* ============================= */
-  /* 🔍 VALIDATE VARIANT */
+  /* 🔍 VARIANT CHECK */
   /* ============================= */
   const { data: variant } = await supabase
     .from("product_variants")
-    .select("id, stock")
+    .select("id, stock, reserved_stock, selling_price, cost_price, platform_margin")
     .eq("id", variantId)
     .single();
 
-  if (!variant) {
-    throw new Error("Invalid variant");
-  }
+  if (!variant) throw new Error("Invalid variant");
 
-  if (variant.stock <= 0) {
+  const availableStock =
+    (variant.stock || 0) - (variant.reserved_stock || 0);
+
+  if (availableStock <= 0) {
     throw new Error("Out of stock");
   }
 
   /* ============================= */
-  /* 🔍 CHECK EXISTING */
+  /* 🔍 EXISTING ITEM */
   /* ============================= */
-  const { data: existingItem } = await supabase
+  const { data: existing } = await supabase
     .from("cart")
     .select("id, quantity")
     .eq("user_id", user.id)
-    .eq("product_id", productId)
     .eq("variant_id", variantId)
     .maybeSingle();
 
-  /* ============================= */
-  /* ➕ UPDATE OR INSERT */
-  /* ============================= */
-  if (existingItem) {
-    const newQty = existingItem.quantity + 1;
+  if (existing) {
+    const newQty = existing.quantity + 1;
 
-    if (newQty > variant.stock) {
+    if (newQty > availableStock) {
       throw new Error("Stock limit reached");
     }
 
     await supabase
       .from("cart")
       .update({ quantity: newQty })
-      .eq("id", existingItem.id);
+      .eq("id", existing.id);
   } else {
     await supabase.from("cart").insert({
       user_id: user.id,
@@ -98,58 +99,77 @@ export async function updateCartQuantity(
 ) {
   const supabase = await getSupabaseServer();
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Unauthorized");
+
   if (newQuantity < 1) {
-    throw new Error("Quantity must be at least 1");
+    throw new Error("Min 1 quantity");
   }
 
-  /* 🔍 GET CART ITEM */
+  /* 🔍 CART ITEM */
   const { data: cartItem } = await supabase
     .from("cart")
-    .select("variant_id")
+    .select("variant_id, user_id")
     .eq("id", cartItemId)
     .single();
 
-  if (!cartItem) throw new Error("Cart item not found");
+  if (!cartItem) throw new Error("Item not found");
 
-  /* 🔍 CHECK STOCK */
+  if (cartItem.user_id !== user.id) {
+    throw new Error("Not allowed");
+  }
+
+  /* 🔍 VARIANT */
   const { data: variant } = await supabase
     .from("product_variants")
-    .select("stock")
+    .select("stock, reserved_stock")
     .eq("id", cartItem.variant_id)
     .single();
 
   if (!variant) throw new Error("Variant not found");
 
-  if (newQuantity > variant.stock) {
-    throw new Error("Stock limit exceeded");
+  const available =
+    (variant.stock || 0) - (variant.reserved_stock || 0);
+
+  if (newQuantity > available) {
+    throw new Error("Stock exceeded");
   }
 
-  const { error } = await supabase
+  await supabase
     .from("cart")
     .update({ quantity: newQuantity })
     .eq("id", cartItemId);
-
-  if (error) {
-    console.error(error);
-    throw new Error("Failed to update quantity");
-  }
 
   revalidatePath("/cart");
   return { success: true };
 }
 
 /* ============================= */
-/* ❌ REMOVE ITEM */
+/* ❌ REMOVE */
 /* ============================= */
 export async function removeFromCart(cartItemId: string) {
   const supabase = await getSupabaseServer();
 
-  const { error } = await supabase
-    .from("cart")
-    .delete()
-    .eq("id", cartItemId);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (error) throw new Error("Failed to remove item");
+  if (!user) throw new Error("Unauthorized");
+
+  const { data: item } = await supabase
+    .from("cart")
+    .select("user_id")
+    .eq("id", cartItemId)
+    .single();
+
+  if (!item || item.user_id !== user.id) {
+    throw new Error("Not allowed");
+  }
+
+  await supabase.from("cart").delete().eq("id", cartItemId);
 
   revalidatePath("/cart");
   return { success: true };
@@ -167,12 +187,7 @@ export async function clearCart() {
 
   if (!user) throw new Error("Login required");
 
-  const { error } = await supabase
-    .from("cart")
-    .delete()
-    .eq("user_id", user.id);
-
-  if (error) throw new Error("Failed to clear cart");
+  await supabase.from("cart").delete().eq("user_id", user.id);
 
   revalidatePath("/cart");
   return { success: true };

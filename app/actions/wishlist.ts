@@ -1,7 +1,11 @@
 "use server";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { revalidatePath } from "next/cache";
 
+/* ============================= */
+/* ❤️ TOGGLE WISHLIST */
+/* ============================= */
 export async function toggleWishlist(productId: string) {
   const supabase = await getSupabaseServer();
 
@@ -9,8 +13,24 @@ export async function toggleWishlist(productId: string) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return { error: "Unauthorized" };
+  if (!user) throw new Error("Unauthorized");
 
+  /* 🔍 PRODUCT VALIDATION */
+  const { data: product } = await supabase
+    .from("products")
+    .select("id, status, approval_status")
+    .eq("id", productId)
+    .single();
+
+  if (
+    !product ||
+    product.status !== "active" ||
+    product.approval_status !== "approved"
+  ) {
+    throw new Error("Product not available");
+  }
+
+  /* 🔍 CHECK EXISTING */
   const { data: existing } = await supabase
     .from("wishlists")
     .select("id")
@@ -20,6 +40,8 @@ export async function toggleWishlist(productId: string) {
 
   if (existing) {
     await supabase.from("wishlists").delete().eq("id", existing.id);
+
+    revalidatePath("/wishlist");
     return { success: true, action: "removed" };
   }
 
@@ -28,9 +50,13 @@ export async function toggleWishlist(productId: string) {
     product_id: productId,
   });
 
+  revalidatePath("/wishlist");
   return { success: true, action: "added" };
 }
 
+/* ============================= */
+/* ❌ REMOVE */
+/* ============================= */
 export async function removeFromWishlist(productId: string) {
   const supabase = await getSupabaseServer();
 
@@ -38,7 +64,7 @@ export async function removeFromWishlist(productId: string) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return { error: "Unauthorized" };
+  if (!user) throw new Error("Unauthorized");
 
   await supabase
     .from("wishlists")
@@ -46,11 +72,13 @@ export async function removeFromWishlist(productId: string) {
     .eq("user_id", user.id)
     .eq("product_id", productId);
 
+  revalidatePath("/wishlist");
   return { success: true };
 }
 
-
-
+/* ============================= */
+/* 🛒 MOVE TO CART */
+/* ============================= */
 export async function moveToCart(productId: string) {
   const supabase = await getSupabaseServer();
 
@@ -58,31 +86,66 @@ export async function moveToCart(productId: string) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return { error: "Unauthorized" };
+  if (!user) throw new Error("Unauthorized");
 
-  // get first variant
+  /* ============================= */
+  /* 🔍 GET BEST VARIANT */
+  /* ============================= */
   const { data: variants } = await supabase
     .from("product_variants")
-    .select("id")
+    .select("id, stock, reserved_stock, selling_price, cost_price, platform_margin")
     .eq("product_id", productId)
-    .limit(1);
+    .order("selling_price", { ascending: true });
 
-  const variantId = variants?.[0]?.id;
+  if (!variants || variants.length === 0) {
+    throw new Error("No variants available");
+  }
 
-  // add to cart
-  await supabase.from("cart").insert({
-    user_id: user.id,
-    product_id: productId,
-    variant_id: variantId,
-    quantity: 1,
-  });
+  const variant = variants.find(
+    (v) => (v.stock || 0) - (v.reserved_stock || 0) > 0
+  );
 
-  // remove from wishlist
+  if (!variant) {
+    throw new Error("Out of stock");
+  }
+
+  /* ============================= */
+  /* 🔍 CHECK EXISTING CART */
+  /* ============================= */
+  const { data: existing } = await supabase
+    .from("cart")
+    .select("id, quantity")
+    .eq("user_id", user.id)
+    .eq("variant_id", variant.id)
+    .maybeSingle();
+
+  if (existing) {
+    await supabase
+      .from("cart")
+      .update({
+        quantity: existing.quantity + 1,
+      })
+      .eq("id", existing.id);
+  } else {
+    await supabase.from("cart").insert({
+      user_id: user.id,
+      product_id: productId,
+      variant_id: variant.id,
+      quantity: 1,
+    });
+  }
+
+  /* ============================= */
+  /* ❌ REMOVE FROM WISHLIST */
+  /* ============================= */
   await supabase
     .from("wishlists")
     .delete()
     .eq("user_id", user.id)
     .eq("product_id", productId);
+
+  revalidatePath("/wishlist");
+  revalidatePath("/cart");
 
   return { success: true };
 }

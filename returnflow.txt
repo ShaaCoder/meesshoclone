@@ -1,0 +1,61 @@
+BEST RETURN FLOW FOR YOU
+STEP 1
+
+Customer requests return
+
+STEP 2
+
+Admin approves
+
+STEP 3
+
+System creates return shipment
+
+STEP 4
+
+Courier picks from customer
+
+STEP 5
+
+Seller receives returned product
+
+STEP 6
+
+Admin verifies
+
+STEP 7
+
+Refund customer
+
+STEP 8
+
+Complete return
+
+
+VERY IMPORTANT DECISION
+
+You must choose:
+
+OPTION A — Return To Seller
+Customer → Seller
+
+Simpler.
+
+OR
+
+OPTION B — Return To Warehouse
+Customer → Your Warehouse → Seller
+
+Best for large marketplaces.
+
+FOR YOU RIGHT NOW
+
+Start with:
+
+RETURN TO SELLER
+
+because:
+
+easier
+no warehouse needed
+Shiprocket supports directly

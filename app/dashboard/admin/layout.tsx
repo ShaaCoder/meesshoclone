@@ -52,8 +52,10 @@ export default async function AdminLayout({
           <nav className="flex flex-col gap-2">
             <SidebarItem href="/dashboard/admin" icon={<LayoutDashboard size={18} />} label="Dashboard" />
             <SidebarItem href="/dashboard/admin/users" icon={<Users size={18} />} label="Users" />
+            <SidebarItem href="/dashboard/admin/customers" icon={<Users size={18} />} label="Customers" />
             <SidebarItem href="/dashboard/admin/products" icon={<Package size={18} />} label="Products" />
             <SidebarItem href="/dashboard/admin/orders" icon={<ShoppingCart size={18} />} label="Orders" />
+            <SidebarItem href="/dashboard/admin/returns" icon={<ShoppingCart size={18} />} label="Returns" />
             <SidebarItem href="/dashboard/admin/banks" icon={<Landmark size={18} />} label="Banks" />
             <SidebarItem href="/dashboard/admin/withdraw" icon={<Wallet size={18} />} label="Withdraw" />
             <SidebarItem href="/dashboard/admin/analytics" icon={<BarChart3 size={18} />} label="Analytics" />

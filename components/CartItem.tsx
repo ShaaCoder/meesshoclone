@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 function getPrice(variant: any) {
   if (!variant) return 0;
 
-  if (Number(variant.price) > 0) return Number(variant.price);
+  if (Number(variant.selling_price) > 0) return Number(variant.selling_price);
 
   const fallback =
     Number(variant.cost_price || 0) +
@@ -39,6 +39,12 @@ export default function CartItem({ item }: { item: any }) {
   const variant = Array.isArray(item.product_variants)
     ? item.product_variants[0]
     : item.product_variants;
+
+  const productImages = product?.product_images || [];
+  const productImageUrl =
+    productImages.find((i: any) => i.is_primary)?.url ||
+    productImages[0]?.url ||
+    "/placeholder.svg";
 
   const price = getPrice(variant);
   const total = item.quantity * price;
@@ -78,10 +84,11 @@ export default function CartItem({ item }: { item: any }) {
       {/* IMAGE */}
       <div className="w-28 h-28 relative rounded-lg overflow-hidden">
         <Image
-          src={product?.image || "/placeholder.png"}
+          src={productImageUrl}
           alt={product?.name || "Product"}
           fill
           className="object-cover"
+          sizes="112px"
         />
       </div>
 

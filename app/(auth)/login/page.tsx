@@ -9,56 +9,70 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const router = useRouter();
 
   const handleLogin = async () => {
-    setLoading(true);
+    setErrorMsg("");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      alert(error.message);
-      setLoading(false);
+    if (!email || !password) {
+      setErrorMsg("Please fill all fields");
       return;
     }
 
-    router.replace("/dashboard");
+    try {
+      setLoading(true);
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        setErrorMsg(error.message);
+        return;
+      }
+
+      /* ✅ SINGLE ENTRY POINT */
+      router.replace("/dashboard");
+
+      /* 🔥 FORCE SERVER RE-EVAL */
+      router.refresh();
+    } catch (err: any) {
+      setErrorMsg("Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen grid md:grid-cols-2">
-
+      
       {/* LEFT */}
       <div className="hidden md:flex flex-col justify-center px-16 gradient-primary text-white">
-        <h1 className="text-4xl font-bold leading-tight">
-          Welcome back 👋
-        </h1>
+        <h1 className="text-4xl font-bold">Welcome back 👋</h1>
         <p className="mt-4 text-white/80">
-          Login and continue growing your business.
+          Login to continue shopping or managing your store.
         </p>
       </div>
 
       {/* RIGHT */}
       <div className="flex items-center justify-center px-6 bg-gray-50">
-        <div className="w-full max-w-md animate-fade-in">
+        <div className="w-full max-w-md">
 
-          <h2 className="text-2xl font-bold text-gray-800">
-            Login
-          </h2>
-          <p className="text-gray-500 mt-1">
-            Enter your details below
-          </p>
+          <h2 className="text-2xl font-bold text-gray-800">Login</h2>
+
+          {errorMsg && (
+            <div className="mt-4 text-red-500 text-sm">{errorMsg}</div>
+          )}
 
           <div className="mt-6 space-y-4">
-
             <input
               type="email"
               placeholder="Email"
               className="input"
+              value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
 
@@ -66,6 +80,7 @@ export default function LoginPage() {
               type="password"
               placeholder="Password"
               className="input"
+              value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
 
