@@ -1,6 +1,9 @@
+// app/dashboard/seller/wallet/page.tsx
+
 import { requestWithdraw } from "@/app/actions/wallet";
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 import {
   Wallet,
@@ -9,9 +12,11 @@ import {
   Banknote,
   CreditCard,
   Lock,
+  TrendingUp,
+  Clock3,
+  AlertCircle,
 } from "lucide-react";
-import { supabaseAdmin }
-from "@/lib/supabase-admin";
+
 export default async function WalletPage() {
   const supabase =
     await getSupabaseServer();
@@ -25,145 +30,101 @@ export default async function WalletPage() {
   } =
     await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) {
+    return null;
+  }
 
   /* ============================= */
-  /* 💰 FETCH WALLET */
+  /* 💰 WALLET */
   /* ============================= */
 
-  const {
+  let {
     data: wallet,
-    error: walletError,
   } = await supabase
     .from("wallets")
     .select("*")
     .eq("seller_id", user.id)
-    .single();
+    .maybeSingle();
 
-  console.log(
-    "wallet:",
-    wallet
-  );
+  if (!wallet) {
+    const {
+      data: createdWallet,
+    } = await supabaseAdmin
+      .from("wallets")
+      .insert({
+        seller_id: user.id,
+        balance: 0,
+        locked_balance: 0,
+        total_earnings: 0,
+        total_withdrawn: 0,
+      })
+      .select()
+      .single();
 
-  console.log(
-    "walletError:",
-    walletError
-  );
+    wallet = createdWallet;
+  }
 
   /* ============================= */
-  /* 🏦 FETCH BANK */
+  /* 🏦 BANK ACCOUNT */
   /* ============================= */
 
   const {
     data: bank,
-    error: bankError,
   } = await supabase
     .from("bank_accounts")
     .select("*")
     .eq("seller_id", user.id)
-    .single();
-
-  console.log(
-    "bank:",
-    bank
-  );
-
-  console.log(
-    "bankError:",
-    bankError
-  );
+    .maybeSingle();
 
   /* ============================= */
-  /* 📜 FETCH TRANSACTIONS */
-  /* ============================= */
-
-  const {
-    data: transactions,
-  } = await supabase
-    .from(
-      "wallet_transactions"
-    )
-    .select("*")
-    .eq("seller_id", user.id)
-    .order("created_at", {
-      ascending: false,
-    });
-
-  /* ============================= */
-  /* 💸 FETCH WITHDRAWS */
+  /* 💸 WITHDRAW REQUESTS */
   /* ============================= */
 
   const {
     data: withdraws,
   } = await supabase
-    .from(
-      "withdraw_requests"
-    )
+    .from("withdraw_requests")
     .select("*")
     .eq("seller_id", user.id)
     .order("created_at", {
       ascending: false,
     });
-/* ============================= */
-/* ⏳ UPCOMING PAYOUTS */
-/* ============================= */
 
-const {
-  data: upcomingPayouts,
-  error: upcomingError,
-} = await supabaseAdmin
-  .from("orders")
-  .select(`
-    id,
-    order_code,
-    seller_payout,
-    seller_paid,
-    delivered_at,
-    payout_release_at
-  `)
-  .eq("seller_id", user.id)
-  .eq("seller_paid", false)
-  .not(
-    "payout_release_at",
-    "is",
-    null
-  )
-  .order(
-    "payout_release_at",
-    {
+  /* ============================= */
+  /* 📜 TRANSACTIONS */
+  /* ============================= */
+
+  const {
+    data: transactions,
+  } = await supabase
+    .from("wallet_transactions")
+    .select("*")
+    .eq("seller_id", user.id)
+    .order("created_at", {
+      ascending: false,
+    })
+    .limit(20);
+
+  /* ============================= */
+  /* 📦 LOCKED SETTLEMENTS */
+  /* ============================= */
+
+  const {
+    data: settlements,
+  } = await supabaseAdmin
+    .from("settlements")
+    .select(`
+      *,
+      orders (
+        order_code
+      )
+    `)
+    .eq("seller_id", user.id)
+    .eq("status", "locked")
+    .order("release_date", {
       ascending: true,
-    }
-  );
+    });
 
-console.log(
-  "UPCOMING PAYOUTS:",
-  upcomingPayouts
-);
-
-console.log(
-  "UPCOMING ERROR:",
-  upcomingError
-);
-
-/* ============================= */
-/* 💰 UPCOMING PAYOUT TOTAL */
-/* ============================= */
-
-const upcomingPayoutAmount =
-  upcomingPayouts
-    ?.filter(
-      (p: any) =>
-        !p.seller_paid
-    )
-    .reduce(
-      (sum, payout) =>
-        sum +
-        Number(
-          payout.seller_payout ||
-            0
-        ),
-      0
-    ) || 0;
   /* ============================= */
   /* 💰 CALCULATIONS */
   /* ============================= */
@@ -175,209 +136,266 @@ const upcomingPayoutAmount =
 
   const lockedBalance =
     Number(
-      wallet?.locked_balance ||
-        0
+      wallet?.locked_balance || 0
     );
 
-  const totalBalance =
-    availableBalance +
-    lockedBalance;
+  const totalEarnings =
+    Number(
+      wallet?.total_earnings || 0
+    );
+
+  const totalWithdrawn =
+    Number(
+      wallet?.total_withdrawn || 0
+    );
+
+  const upcomingAmount =
+    settlements?.reduce(
+      (
+        sum: number,
+        settlement: any
+      ) =>
+        sum +
+        Number(
+          settlement.amount || 0
+        ),
+      0
+    ) || 0;
 
   const canWithdraw =
-    !!bank?.is_verified &&
-    availableBalance > 0;
+    bank?.is_verified &&
+    availableBalance >= 100;
 
-  const format = (
+  /* ============================= */
+  /* 💵 FORMATTER */
+  /* ============================= */
+
+  const formatPrice = (
     amount: number
   ) =>
     new Intl.NumberFormat(
       "en-IN"
     ).format(
-      Math.round(amount)
+      Math.round(amount || 0)
     );
+
+  /* ============================= */
+  /* 🧠 TRANSACTION LABELS */
+  /* ============================= */
+
+  function getTransactionTitle(
+    type: string
+  ) {
+    switch (type) {
+      case "credit_locked":
+        return "Payment Received & Held Until Return Window Ends";
+
+      case "release_locked":
+        return "Settlement Released To Available Balance";
+
+      case "withdraw_hold":
+        return "Withdraw Request Created";
+
+      case "withdraw_completed":
+        return "Withdraw Completed";
+
+      case "withdraw_rejected":
+        return "Withdraw Request Rejected";
+
+      case "refund":
+        return "Refund Deducted";
+
+      case "penalty":
+        return "Penalty Deducted";
+
+      case "debit":
+        return "Wallet Debited";
+
+      default:
+        return type.replaceAll(
+          "_",
+          " "
+        );
+    }
+  }
+
+  /* ============================= */
+  /* ➕ POSITIVE TXNS */
+  /* ============================= */
+
+  function isPositiveTransaction(
+    type: string
+  ) {
+    return [
+      "credit_locked",
+      "release_locked",
+      "withdraw_rejected",
+    ].includes(type);
+  }
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8 text-white">
+
       {/* ============================= */}
-      {/* 🧾 HEADER */}
+      {/* HEADER */}
       {/* ============================= */}
 
       <div>
-        <h1 className="text-3xl font-black flex items-center gap-2">
-          <Wallet className="w-8 h-8 text-emerald-400" />
-          Wallet
+        <h1 className="text-4xl font-black flex items-center gap-3">
+          <Wallet className="w-9 h-9 text-emerald-400" />
+          Seller Wallet
         </h1>
 
-        <p className="text-zinc-400 mt-1">
-          Manage your earnings,
-          withdrawals &
-          settlements
+        <p className="text-zinc-400 mt-2">
+          Manage earnings,
+          settlements and withdrawals
         </p>
       </div>
 
       {/* ============================= */}
-      {/* 💰 BALANCE CARDS */}
+      {/* STATS */}
       {/* ============================= */}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+
         {/* AVAILABLE */}
 
-        <div className="bg-gradient-to-r from-emerald-600 to-green-500 rounded-3xl p-6 shadow-xl">
-          <p className="text-sm text-white/70">
-            Available Balance
-          </p>
-
-          <h2 className="text-4xl font-black mt-3">
-            ₹
-            {format(
-              availableBalance
-            )}
-          </h2>
-
-          <div className="flex items-center gap-2 mt-4 text-sm text-white/80">
-            <Wallet className="w-4 h-4" />
-            Ready to withdraw
-          </div>
-        </div>
+        <StatCard
+          title="Available Balance"
+          value={availableBalance}
+          subtitle="Ready for withdrawal"
+          icon={
+            <Wallet className="w-5 h-5 text-white/80" />
+          }
+          color="green"
+        />
 
         {/* LOCKED */}
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <p className="text-sm text-zinc-400">
-            Locked Balance
-          </p>
-
-          <h2 className="text-4xl font-black mt-3 text-yellow-400">
-            ₹
-            {format(
-              lockedBalance
-            )}
-          </h2>
-
-          <div className="flex items-center gap-2 mt-4 text-sm text-zinc-400">
-            <Lock className="w-4 h-4" />
-            Pending delivery
-          </div>
-        </div>
+        <StatCard
+          title="Locked Balance"
+          value={lockedBalance}
+          subtitle="Under return window"
+          icon={
+            <Lock className="w-5 h-5 text-yellow-400" />
+          }
+          color="dark"
+          valueColor="text-yellow-400"
+        />
 
         {/* TOTAL */}
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <p className="text-sm text-zinc-400">
-            Total Earnings
-          </p>
+        <StatCard
+          title="Total Earnings"
+          value={totalEarnings}
+          subtitle="Lifetime seller earnings"
+          icon={
+            <TrendingUp className="w-5 h-5 text-blue-400" />
+          }
+          color="dark"
+        />
 
-          <h2 className="text-4xl font-black mt-3">
-            ₹
-            {format(
-              totalBalance
-            )}
-          </h2>
+        {/* WITHDRAWN */}
 
-          <div className="flex items-center gap-2 mt-4 text-sm text-zinc-400">
-            <Banknote className="w-4 h-4" />
-            Lifetime earnings
-          </div>
-        </div>
+        <StatCard
+          title="Total Withdrawn"
+          value={totalWithdrawn}
+          subtitle="Withdrawn by seller"
+          icon={
+            <Banknote className="w-5 h-5 text-red-400" />
+          }
+          color="dark"
+          valueColor="text-red-400"
+        />
+
+        {/* UPCOMING */}
+
+        <StatCard
+          title="Upcoming Releases"
+          value={upcomingAmount}
+          subtitle="Pending settlement releases"
+          icon={
+            <Clock3 className="w-5 h-5 text-blue-400" />
+          }
+          color="dark"
+          valueColor="text-blue-400"
+        />
       </div>
-     {/* UPCOMING PAYOUT */}
 
-<div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-  <p className="text-sm text-zinc-400">
-    Upcoming Payout
-  </p>
-
-  <h2 className="text-4xl font-black mt-3 text-blue-400">
-    ₹
-    {format(
-      upcomingPayoutAmount
-    )}
-  </h2>
-
-  <div className="flex items-center gap-2 mt-4 text-sm text-zinc-400">
-    <Banknote className="w-4 h-4" />
-    Releasing after return window
-  </div>
-</div>
       {/* ============================= */}
-      {/* 💳 WITHDRAW + BANK */}
+      {/* WITHDRAW + BANK */}
       {/* ============================= */}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
         {/* WITHDRAW */}
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <h2 className="font-semibold mb-5 flex items-center gap-2">
+
+          <h2 className="font-bold text-xl mb-6 flex items-center gap-2">
             <ArrowUpCircle className="w-5 h-5 text-emerald-400" />
             Withdraw Money
           </h2>
 
-          {/* NO BANK */}
-
           {!bank && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-sm mb-4">
-              No bank account
-              found
-            </div>
+            <AlertBox
+              color="red"
+              text="No bank account added"
+            />
           )}
-
-          {/* BANK NOT VERIFIED */}
 
           {bank &&
             !bank.is_verified && (
-              <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 p-3 rounded-xl text-sm mb-4">
-                Bank account not
-                verified by admin
-              </div>
+              <AlertBox
+                color="yellow"
+                text="Bank verification pending"
+              />
             )}
 
-          {/* NO BALANCE */}
-
-          {availableBalance <=
-            0 && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-sm mb-4">
-              No withdrawable
-              balance available
-            </div>
+          {availableBalance < 100 && (
+            <AlertBox
+              color="red"
+              text="Minimum withdrawal amount is ₹100"
+            />
           )}
 
-          {/* VERIFIED */}
-
           {canWithdraw && (
-            <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-3 rounded-xl text-sm mb-4">
-              ✅ Withdrawals are
-              enabled
-            </div>
+            <AlertBox
+              color="green"
+              text="Withdrawals enabled"
+            />
           )}
 
           <form
-            action={
-              requestWithdraw
-            }
-            className="space-y-4"
+            action={async (
+              formData
+            ) => {
+              "use server";
+
+              await requestWithdraw(
+                formData
+              );
+            }}
+            className="space-y-4 mt-5"
           >
+
             <input
               type="number"
               name="amount"
-              placeholder="Enter amount"
-              min={1}
-              max={
-                availableBalance
-              }
+              min={100}
+              step="0.01"
+              max={availableBalance}
               required
-              disabled={
-                !canWithdraw
-              }
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              disabled={!canWithdraw}
+              placeholder="Enter withdraw amount"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
 
             <button
-              disabled={
-                !canWithdraw
-              }
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl py-3 font-semibold transition"
+              disabled={!canWithdraw}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl py-3 font-semibold transition"
             >
-              Withdraw
+              Withdraw Balance
             </button>
           </form>
         </div>
@@ -385,82 +403,43 @@ const upcomingPayoutAmount =
         {/* BANK */}
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <h2 className="font-semibold mb-5 flex items-center gap-2">
+
+          <h2 className="font-bold text-xl mb-6 flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-blue-400" />
             Bank Account
           </h2>
 
           {bank ? (
-            <div className="space-y-4">
-              {/* ACCOUNT HOLDER */}
+            <div className="space-y-5">
 
-              <div>
-                <p className="text-xs text-zinc-500">
-                  Account Holder
-                </p>
+              <InfoRow
+                label="Account Holder"
+                value={
+                  bank.account_holder_name
+                }
+              />
 
-                <p className="font-medium">
-                  {
-                    bank.account_holder_name
-                  }
-                </p>
-              </div>
+              <InfoRow
+                label="Account Number"
+                value={`****${bank.account_number?.slice(-4)}`}
+              />
 
-              {/* ACCOUNT NUMBER */}
+              <InfoRow
+                label="Bank Name"
+                value={bank.bank_name}
+              />
 
-              <div>
-                <p className="text-xs text-zinc-500">
-                  Account Number
-                </p>
+              <InfoRow
+                label="IFSC"
+                value={bank.ifsc_code}
+              />
 
-                <p className="font-medium">
-                  ****
-                  {bank.account_number?.slice(
-                    -4
-                  )}
-                </p>
-              </div>
-
-              {/* BANK */}
-
-              <div>
-                <p className="text-xs text-zinc-500">
-                  Bank Name
-                </p>
-
-                <p className="font-medium">
-                  {bank.bank_name}
-                </p>
-              </div>
-
-              {/* IFSC */}
-
-              <div>
-                <p className="text-xs text-zinc-500">
-                  IFSC Code
-                </p>
-
-                <p className="font-medium">
-                  {
-                    bank.ifsc_code
-                  }
-                </p>
-              </div>
-
-              {/* UPI */}
-
-              <div>
-                <p className="text-xs text-zinc-500">
-                  UPI ID
-                </p>
-
-                <p className="font-medium">
-                  {bank.upi_id ||
-                    "-"}
-                </p>
-              </div>
-
-              {/* STATUS */}
+              <InfoRow
+                label="UPI"
+                value={
+                  bank.upi_id || "-"
+                }
+              />
 
               <StatusBadge
                 status={
@@ -471,79 +450,81 @@ const upcomingPayoutAmount =
               />
             </div>
           ) : (
-            <div className="text-zinc-500">
-              No bank account
-              added
-            </div>
+            <EmptyState
+              icon={
+                <CreditCard className="w-10 h-10 opacity-40" />
+              }
+              text="No bank account added"
+            />
           )}
         </div>
       </div>
 
       {/* ============================= */}
-      {/* 📊 TRANSACTIONS + WITHDRAWS */}
+      {/* TRANSACTIONS + WITHDRAWS */}
       {/* ============================= */}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
         {/* TRANSACTIONS */}
 
-        <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <h2 className="mb-5 font-semibold flex items-center gap-2">
+        <div className="xl:col-span-2 bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+
+          <h2 className="font-bold text-xl mb-6 flex items-center gap-2">
             <ArrowDownCircle className="w-5 h-5 text-green-400" />
-            Transactions
+            Wallet Transactions
           </h2>
 
-          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+          <div className="space-y-3 max-h-[700px] overflow-y-auto">
+
             {transactions?.length ? (
               transactions.map(
-                (t: any) => {
-                  const isCredit =
-                    t.type ===
-                    "credit";
+                (
+                  transaction: any
+                ) => {
 
-                  const isRelease =
-                    t.type ===
-                    "release";
-
-                  const isPositive =
-                    isCredit ||
-                    isRelease;
+                  const positive =
+                    isPositiveTransaction(
+                      transaction.type
+                    );
 
                   return (
                     <div
-                      key={t.id}
-                      className="flex items-center justify-between bg-zinc-800 rounded-2xl p-4"
+                      key={
+                        transaction.id
+                      }
+                      className="bg-zinc-800 rounded-2xl p-4 flex items-center justify-between"
                     >
-                      <div>
-                        <p className="font-medium capitalize">
-                          {t.note ||
-                            t.type}
+
+                      <div className="pr-4">
+                        <p className="font-medium">
+                          {getTransactionTitle(
+                            transaction.type
+                          )}
                         </p>
 
                         <p className="text-xs text-zinc-500 mt-1">
                           {new Date(
-                            t.created_at
+                            transaction.created_at
                           ).toLocaleString()}
                         </p>
                       </div>
 
                       <div
-                        className={`font-bold text-lg ${
-                          isCredit
+                        className={`text-lg font-black ${
+                          positive
                             ? "text-green-400"
-                            : isRelease
-                            ? "text-blue-400"
                             : "text-red-400"
                         }`}
                       >
-                        {isPositive
+                        {positive
                           ? "+"
                           : "-"}
 
                         ₹
-                        {format(
+                        {formatPrice(
                           Number(
-                            t.amount ||
-                              0
+                            transaction.amount || 0
                           )
                         )}
                       </div>
@@ -552,52 +533,61 @@ const upcomingPayoutAmount =
                 }
               )
             ) : (
-              <div className="text-zinc-500 text-sm">
-                No transactions
-                found
-              </div>
+              <EmptyState
+                icon={
+                  <Wallet className="w-10 h-10 opacity-40" />
+                }
+                text="No transactions found"
+              />
             )}
           </div>
         </div>
 
-        {/* WITHDRAW REQUESTS */}
+        {/* WITHDRAWS */}
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <h2 className="mb-5 font-semibold flex items-center gap-2">
+
+          <h2 className="font-bold text-xl mb-6 flex items-center gap-2">
             <Banknote className="w-5 h-5 text-yellow-400" />
             Withdraw Requests
           </h2>
 
-          <div className="space-y-3 max-h-[500px] overflow-y-auto">
+          <div className="space-y-3">
+
             {withdraws?.length ? (
               withdraws.map(
-                (w: any) => (
+                (
+                  withdraw: any
+                ) => (
                   <div
-                    key={w.id}
+                    key={
+                      withdraw.id
+                    }
                     className="bg-zinc-800 rounded-2xl p-4"
                   >
+
                     <div className="flex items-center justify-between">
+
                       <div>
-                        <p className="font-bold">
+                        <p className="font-bold text-lg">
                           ₹
-                          {format(
+                          {formatPrice(
                             Number(
-                              w.amount ||
-                                0
+                              withdraw.amount || 0
                             )
                           )}
                         </p>
 
                         <p className="text-xs text-zinc-500 mt-1">
                           {new Date(
-                            w.created_at
+                            withdraw.created_at
                           ).toLocaleString()}
                         </p>
                       </div>
 
                       <StatusBadge
                         status={
-                          w.status
+                          withdraw.status
                         }
                       />
                     </div>
@@ -605,102 +595,211 @@ const upcomingPayoutAmount =
                 )
               )
             ) : (
-              <div className="text-zinc-500 text-sm">
-                No withdraw
-                requests
-              </div>
+              <EmptyState
+                icon={
+                  <Banknote className="w-10 h-10 opacity-40" />
+                }
+                text="No withdraw requests yet"
+              />
             )}
           </div>
         </div>
       </div>
- {/* ============================= */}
-{/* ⏳ UPCOMING PAYOUTS */}
-{/* ============================= */}
 
-<div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-  <h2 className="mb-5 font-semibold flex items-center gap-2">
-    <Banknote className="w-5 h-5 text-blue-400" />
-    Upcoming Payouts
-  </h2>
+      {/* ============================= */}
+      {/* UPCOMING SETTLEMENTS */}
+      {/* ============================= */}
 
-  <div className="space-y-3">
-    {upcomingPayouts?.length ? (
-      upcomingPayouts
-        .filter(
-          (payout: any) =>
-            !payout.seller_paid
-        )
-        .map(
-          (payout: any) => {
-            const releaseDate =
-              new Date(
-                payout.payout_release_at
-              );
+      {settlements?.length ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
 
-            const diff =
-              Math.ceil(
-                (
-                  releaseDate.getTime() -
-                  Date.now()
-                ) /
-                  (1000 *
-                    60 *
-                    60 *
-                    24)
-              );
+          <h2 className="font-bold text-xl mb-6 flex items-center gap-2">
+            <Clock3 className="w-5 h-5 text-blue-400" />
+            Upcoming Settlement Releases
+          </h2>
 
-            return (
-              <div
-                key={payout.id}
-                className="bg-zinc-800 rounded-2xl p-4 flex items-center justify-between"
-              >
-                <div>
-                  <p className="font-semibold">
-                    {
-                      payout.order_code
-                    }
-                  </p>
+          <div className="space-y-3">
 
-                  <p className="text-sm text-zinc-400 mt-1">
-                    Releases on{" "}
-                    {releaseDate.toLocaleDateString()}
-                  </p>
+            {settlements.map(
+              (
+                settlement: any
+              ) => {
 
-                  <p className="text-xs text-yellow-400 mt-1">
-                    {diff > 0
-                      ? `${diff} days remaining`
-                      : "Releasing soon"}
-                  </p>
-                </div>
+                const releaseDate =
+                  new Date(
+                    settlement.release_date
+                  );
 
-                <div className="text-right">
-                  <p className="text-xl font-bold text-blue-400">
-                    ₹
-                    {format(
-                      Number(
-                        payout.seller_payout ||
-                          0
+                const daysLeft =
+                  Math.ceil(
+                    (
+                      releaseDate.getTime() -
+                      Date.now()
+                    ) /
+                      (
+                        1000 *
+                        60 *
+                        60 *
+                        24
                       )
-                    )}
-                  </p>
-                </div>
-              </div>
-            );
-          }
-        )
-    ) : (
-      <div className="text-zinc-500 text-sm">
-        No upcoming payouts
-      </div>
-    )}
-  </div>
-</div>
+                  );
+
+                return (
+                  <div
+                    key={
+                      settlement.id
+                    }
+                    className="bg-zinc-800 rounded-2xl p-4 flex items-center justify-between"
+                  >
+
+                    <div>
+                      <p className="font-semibold">
+                        {
+                          settlement
+                            .orders
+                            ?.order_code
+                        }
+                      </p>
+
+                      <p className="text-sm text-zinc-500 mt-1">
+                        Release:
+                        {" "}
+                        {releaseDate.toLocaleDateString()}
+                      </p>
+
+                      <p className="text-xs text-yellow-400 mt-1">
+                        {daysLeft > 0
+                          ? `${daysLeft} days remaining`
+                          : "Releasing soon"}
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-blue-400">
+                        ₹
+                        {formatPrice(
+                          Number(
+                            settlement.amount || 0
+                          )
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 /* ============================= */
-/* 🏷 STATUS BADGE */
+/* 📊 STAT CARD */
+/* ============================= */
+
+function StatCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  color,
+  valueColor,
+}: any) {
+
+  const formatPrice = (
+    amount: number
+  ) =>
+    new Intl.NumberFormat(
+      "en-IN"
+    ).format(
+      Math.round(amount || 0)
+    );
+
+  return (
+    <div
+      className={`rounded-3xl p-6 border ${
+        color === "green"
+          ? "bg-gradient-to-br from-emerald-600 to-green-500 border-transparent"
+          : "bg-zinc-900 border-zinc-800"
+      }`}
+    >
+
+      <div className="flex items-center justify-between">
+        <p
+          className={`text-sm ${
+            color === "green"
+              ? "text-white/80"
+              : "text-zinc-400"
+          }`}
+        >
+          {title}
+        </p>
+
+        {icon}
+      </div>
+
+      <h2
+        className={`text-4xl font-black mt-5 ${
+          valueColor ||
+          "text-white"
+        }`}
+      >
+        ₹{formatPrice(value)}
+      </h2>
+
+      <p
+        className={`text-sm mt-4 ${
+          color === "green"
+            ? "text-white/70"
+            : "text-zinc-500"
+        }`}
+      >
+        {subtitle}
+      </p>
+    </div>
+  );
+}
+
+/* ============================= */
+/* 🚨 ALERT */
+/* ============================= */
+
+function AlertBox({
+  text,
+  color,
+}: {
+  text: string;
+
+  color:
+    | "red"
+    | "green"
+    | "yellow";
+}) {
+
+  const styles = {
+    red:
+      "bg-red-500/10 border border-red-500/20 text-red-400",
+
+    green:
+      "bg-green-500/10 border border-green-500/20 text-green-400",
+
+    yellow:
+      "bg-yellow-500/10 border border-yellow-500/20 text-yellow-400",
+  };
+
+  return (
+    <div
+      className={`rounded-2xl p-4 text-sm mb-4 ${styles[color]}`}
+    >
+      {text}
+    </div>
+  );
+}
+
+/* ============================= */
+/* 🏷️ STATUS */
 /* ============================= */
 
 function StatusBadge({
@@ -708,23 +807,22 @@ function StatusBadge({
 }: {
   status: string;
 }) {
+
   const styles: Record<
     string,
     string
   > = {
+
     pending:
       "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20",
 
     approved:
       "bg-blue-500/10 text-blue-400 border border-blue-500/20",
 
-    paid:
+    completed:
       "bg-green-500/10 text-green-400 border border-green-500/20",
 
     rejected:
-      "bg-red-500/10 text-red-400 border border-red-500/20",
-
-    failed:
       "bg-red-500/10 text-red-400 border border-red-500/20",
 
     verified:
@@ -733,12 +831,62 @@ function StatusBadge({
 
   return (
     <span
-      className={`px-3 py-1 rounded-full text-xs font-medium capitalize ${
+      className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${
         styles[status] ||
         "bg-zinc-800 text-zinc-300"
       }`}
     >
       {status}
     </span>
+  );
+}
+
+/* ============================= */
+/* ℹ️ INFO */
+/* ============================= */
+
+function InfoRow({
+  label,
+  value,
+}: {
+  label: string;
+
+  value: string;
+}) {
+
+  return (
+    <div>
+      <p className="text-xs text-zinc-500">
+        {label}
+      </p>
+
+      <p className="font-medium mt-1">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/* ============================= */
+/* 📭 EMPTY */
+/* ============================= */
+
+function EmptyState({
+  icon,
+  text,
+}: {
+  icon: React.ReactNode;
+
+  text: string;
+}) {
+
+  return (
+    <div className="text-center py-10 text-zinc-500">
+      <div className="flex justify-center mb-3">
+        {icon}
+      </div>
+
+      <p>{text}</p>
+    </div>
   );
 }

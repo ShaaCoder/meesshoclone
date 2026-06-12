@@ -22,7 +22,7 @@ const links = [
   { href: "/dashboard/seller/returns", label: "Returns", icon: ShoppingCart },
   { href: "/dashboard/seller/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/seller/wallet", label: "Wallet", icon: Wallet },
-  { href: "/dashboard/seller/invoices", label: "Invoices", icon: FileText },
+  { href: "/dashboard/seller/verification", label: "Verification", icon: FileText },
   { href: "/dashboard/seller/profile", label: "Profile", icon: User },
 ];
 

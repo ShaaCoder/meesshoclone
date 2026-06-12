@@ -1,20 +1,25 @@
 "use server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
+
 import { generateInvoicePDF } from "@/lib/pdf/generateInvoicePDF";
 
-/* ======================================== */
-/* 🧾 GENERATE SELLER INVOICES */
-/* ======================================== */
+/* =======================================================
+   🧾 GENERATE SELLER INVOICES
+======================================================= */
+
 export async function generateSellerInvoice(
   orderId: string
 ) {
   try {
-    /* ======================================== */
-    /* 📦 FETCH ORDER + ADDRESS + PAYMENT */
-    /* ======================================== */
+    /* =======================================================
+       📦 FETCH ORDER
+    ======================================================= */
 
-    const { data: order, error: orderError } =
+    const {
+      data: order,
+      error: orderError,
+    } =
       await supabaseAdmin
         .from("orders")
         .select(`
@@ -31,21 +36,35 @@ export async function generateSellerInvoice(
           payments (
             razorpay_payment_id,
             method,
-            status
+            status,
+            amount
           )
         `)
         .eq("id", orderId)
         .single();
 
-    if (orderError || !order) {
-      throw new Error("Order not found");
+    if (
+      orderError ||
+      !order
+    ) {
+      console.error(
+        "ORDER ERROR:",
+        orderError
+      );
+
+      throw new Error(
+        "Order not found"
+      );
     }
 
-    /* ======================================== */
-    /* 📦 FETCH ORDER ITEMS */
-    /* ======================================== */
+    /* =======================================================
+       📦 FETCH ORDER ITEMS
+    ======================================================= */
 
-    const { data: items, error: itemsError } =
+    const {
+      data: items,
+      error: itemsError,
+    } =
       await supabaseAdmin
         .from("order_items")
         .select(`
@@ -62,338 +81,457 @@ export async function generateSellerInvoice(
           product_variants (
             id,
             cost_price,
+            mrp,
             selling_price,
             platform_margin,
-            seller_profit
+            seller_profit,
+            attributes
           )
         `)
         .eq("order_id", orderId);
 
     if (
       itemsError ||
-      !items ||
-      items.length === 0
+      !items?.length
     ) {
+      console.error(
+        "ITEM ERROR:",
+        itemsError
+      );
+
       throw new Error(
         "Order items not found"
       );
     }
 
-    /* ======================================== */
-    /* 🔥 GROUP ITEMS BY SELLER */
-    /* ======================================== */
+    /* =======================================================
+       🧠 GROUP BY SELLER
+    ======================================================= */
 
-    const sellerMap: Record<
+    const sellerGroups: Record<
       string,
       any[]
     > = {};
 
     for (const item of items) {
-      if (!item.seller_id) continue;
+      if (!item.seller_id)
+        continue;
 
-      if (!sellerMap[item.seller_id]) {
-        sellerMap[item.seller_id] = [];
+      if (
+        !sellerGroups[
+          item.seller_id
+        ]
+      ) {
+        sellerGroups[
+          item.seller_id
+        ] = [];
       }
 
-      sellerMap[item.seller_id].push(item);
+      sellerGroups[
+        item.seller_id
+      ].push(item);
     }
 
-    /* ======================================== */
-    /* 📄 GENERATED URLS */
-    /* ======================================== */
+    /* =======================================================
+       📄 GENERATED URLS
+    ======================================================= */
 
-    const invoiceUrls: string[] = [];
+    const invoiceUrls: string[] =
+      [];
 
-    /* ======================================== */
-    /* 🔁 GENERATE INVOICE FOR EACH SELLER */
-    /* ======================================== */
+    /* =======================================================
+       🔁 LOOP SELLERS
+    ======================================================= */
 
-    await Promise.all(
-      Object.keys(sellerMap).map(
-        async (sellerId) => {
-          const sellerItems =
-            sellerMap[sellerId];
+    for (const sellerId of Object.keys(
+      sellerGroups
+    )) {
+      const sellerItems =
+        sellerGroups[sellerId];
 
-          /* ======================================== */
-          /* 🏢 FETCH SELLER */
-          /* ======================================== */
+      /* =======================================================
+         👤 SELLER
+      ======================================================= */
 
-          const {
-            data: seller,
-            error: sellerError,
-          } = await supabaseAdmin
-            .from("users")
-            .select(`
-              *,
-              seller_addresses (
-                *
-              ),
-              bank_accounts (
-                *
-              )
-            `)
-            .eq("id", sellerId)
-            .single();
+      const {
+        data: seller,
+        error: sellerError,
+      } =
+        await supabaseAdmin
+          .from("users")
+          .select(`
+            *,
+            seller_addresses (
+              *
+            ),
+            bank_accounts (
+              *
+            )
+          `)
+          .eq("id", sellerId)
+          .single();
 
-          if (
-            sellerError ||
-            !seller
-          ) {
-            console.error(
-              "Seller not found"
-            );
-            return;
+      if (
+        sellerError ||
+        !seller
+      ) {
+        console.error(
+          "SELLER ERROR:",
+          sellerError
+        );
+
+        continue;
+      }
+
+      /* =======================================================
+         📍 SELLER ADDRESS
+      ======================================================= */
+
+      const sellerAddress =
+        seller
+          ?.seller_addresses?.[0] ||
+        null;
+
+      /* =======================================================
+         🧾 INVOICE NUMBER
+      ======================================================= */
+
+      const invoiceNumber = `INV-${sellerId
+        .slice(0, 4)
+        .toUpperCase()}-${Date.now()}`;
+
+      /* =======================================================
+         🧠 TOTALS
+      ======================================================= */
+
+      let totalTaxable = 0;
+
+      let totalGST = 0;
+
+      let totalPlatformFee = 0;
+
+      let totalSellerProfit = 0;
+
+      let grandTotal = 0;
+
+      /* =======================================================
+         🧠 CALCULATE
+      ======================================================= */
+
+      for (const item of sellerItems) {
+        const quantity =
+          Number(
+            item.quantity || 0
+          );
+
+        const finalPrice =
+          Number(
+            item.final_price ||
+              0
+          );
+
+        const gstPercent =
+          Number(
+            item.gst_percent ||
+              0
+          );
+
+        const sellerEarning =
+          Number(
+            item.seller_earning ||
+              0
+          );
+
+        const platformFee =
+          Number(
+            item.platform_fee ||
+              0
+          );
+
+        const lineTotal =
+          finalPrice;
+
+        /* ============================= */
+        /* GST INCLUDED */
+        /* ============================= */
+
+        const taxable =
+          gstPercent > 0
+            ? (lineTotal * 100) /
+              (100 +
+                gstPercent)
+            : lineTotal;
+
+        const gst =
+          lineTotal - taxable;
+
+        totalTaxable +=
+          taxable;
+
+        totalGST += gst;
+
+        totalPlatformFee +=
+          platformFee;
+
+        totalSellerProfit +=
+          sellerEarning;
+
+        grandTotal += lineTotal;
+      }
+
+      /* =======================================================
+         🏛 GST SPLIT
+      ======================================================= */
+
+      const customerState =
+        String(
+          order.addresses
+            ?.state || ""
+        )
+          .trim()
+          .toLowerCase();
+
+      const sellerState =
+        String(
+          sellerAddress
+            ?.state || ""
+        )
+          .trim()
+          .toLowerCase();
+
+      const sameState =
+        customerState ===
+        sellerState;
+
+      const cgst = sameState
+        ? totalGST / 2
+        : 0;
+
+      const sgst = sameState
+        ? totalGST / 2
+        : 0;
+
+      const igst = !sameState
+        ? totalGST
+        : 0;
+
+      /* =======================================================
+         📄 PDF
+      ======================================================= */
+
+      const pdfBuffer =
+        await generateInvoicePDF(
+          {
+            ...order,
+
+            seller,
+
+            sellerAddress,
+          },
+
+          sellerItems,
+
+          invoiceNumber,
+
+          {
+            totalGST,
+
+            totalTaxable,
+
+            totalPlatformFee,
+
+            totalSellerProfit,
+
+            cgst,
+
+            sgst,
+
+            igst,
+
+            grandTotal,
           }
+        );
 
-          /* ======================================== */
-          /* 📍 SELLER ADDRESS */
-          /* ======================================== */
+      /* =======================================================
+         ☁️ FILE PATH
+      ======================================================= */
 
-          const sellerAddress =
-            seller
-              ?.seller_addresses?.[0] ||
-            null;
+      const filePath = `invoices/${sellerId}/${invoiceNumber}.pdf`;
 
-          /* ======================================== */
-          /* 🧾 INVOICE NUMBER */
-          /* ======================================== */
+      /* =======================================================
+         ☁️ UPLOAD
+      ======================================================= */
 
-          const invoiceNumber = `INV-${sellerId
-            .slice(0, 4)
-            .toUpperCase()}-${Date.now()}`;
+      const {
+        error: uploadError,
+      } =
+        await supabaseAdmin.storage
+          .from("invoices")
+          .upload(
+            filePath,
+            pdfBuffer,
+            {
+              contentType:
+                "application/pdf",
 
-          /* ======================================== */
-          /* 📊 CALCULATIONS */
-          /* ======================================== */
+              upsert: true,
+            }
+          );
 
-          let totalGST = 0;
-          let totalTaxable = 0;
-          let grandTotal = 0;
+      if (uploadError) {
+        console.error(
+          "UPLOAD ERROR:",
+          uploadError
+        );
 
-          for (const item of sellerItems) {
-            const quantity = Number(
-              item.quantity || 0
-            );
+        continue;
+      }
 
-            const finalPrice = Number(
-              item.final_price || 0
-            );
+      /* =======================================================
+         🔗 PUBLIC URL
+      ======================================================= */
 
-            const gstPercent = Number(
-              item.gst_percent || 0
-            );
+      const {
+        data: publicData,
+      } =
+        supabaseAdmin.storage
+          .from("invoices")
+          .getPublicUrl(
+            filePath
+          );
 
-            /* ======================================== */
-            /* 💰 TOTAL */
-            /* ======================================== */
+      const invoiceUrl =
+        publicData.publicUrl;
 
-            const total =
-              finalPrice * quantity;
+      /* =======================================================
+         💾 SAVE DB
+      ======================================================= */
 
-            /* ======================================== */
-            /* 🧠 GST INCLUDED LOGIC */
-            /* ======================================== */
+      const {
+        error: invoiceError,
+      } =
+        await supabaseAdmin
+          .from("invoices")
+          .insert({
+            order_id:
+              order.id,
 
-            const taxable =
-              gstPercent > 0
-                ? (total * 100) /
-                  (100 + gstPercent)
-                : total;
+            seller_id:
+              sellerId,
 
-            const gst =
-              total - taxable;
+            user_id:
+              order.customer_id,
 
-            totalTaxable += taxable;
-            totalGST += gst;
-            grandTotal += total;
-          }
-
-          /* ======================================== */
-          /* 🏛 GST SPLIT */
-          /* ======================================== */
-
-          const customerState =
-            order.addresses?.state ||
-            "";
-
-          const sellerState =
-            sellerAddress?.state ||
-            "";
-
-          const isSameState =
-            customerState
-              .toLowerCase()
-              .trim() ===
-            sellerState
-              .toLowerCase()
-              .trim();
-
-          const cgst = isSameState
-            ? totalGST / 2
-            : 0;
-
-          const sgst = isSameState
-            ? totalGST / 2
-            : 0;
-
-          const igst = !isSameState
-            ? totalGST
-            : 0;
-
-          /* ======================================== */
-          /* 📄 GENERATE PDF */
-          /* ======================================== */
-
-          const pdfBuffer =
-            await generateInvoicePDF(
-              {
-                ...order,
-                seller,
-                sellerAddress,
-              },
-              sellerItems,
+            invoice_number:
               invoiceNumber,
-              {
-                totalGST,
-                totalTaxable,
-                cgst,
-                sgst,
-                igst,
-                grandTotal,
-              }
-            );
 
-          /* ======================================== */
-          /* ☁️ STORAGE PATH */
-          /* ======================================== */
+            pdf_url:
+              invoiceUrl,
 
-          const filePath = `invoices/${sellerId}/${invoiceNumber}.pdf`;
+            amount:
+              Math.round(
+                grandTotal
+              ),
 
-          /* ======================================== */
-          /* ☁️ UPLOAD PDF */
-          /* ======================================== */
+            type:
+              "seller_invoice",
 
-          const {
-            error: uploadError,
-          } =
-            await supabaseAdmin.storage
-              .from("invoices")
-              .upload(
-                filePath,
-                pdfBuffer,
-                {
-                  contentType:
-                    "application/pdf",
-                  upsert: true,
-                }
-              );
+            details: {
+              totalGST:
+                Number(
+                  totalGST.toFixed(
+                    2
+                  )
+                ),
 
-          if (uploadError) {
-            console.error(
-              "Invoice upload failed",
-              uploadError
-            );
+              totalTaxable:
+                Number(
+                  totalTaxable.toFixed(
+                    2
+                  )
+                ),
 
-            return;
-          }
+              totalPlatformFee:
+                Number(
+                  totalPlatformFee.toFixed(
+                    2
+                  )
+                ),
 
-          /* ======================================== */
-          /* 🔗 PUBLIC URL */
-          /* ======================================== */
+              totalSellerProfit:
+                Number(
+                  totalSellerProfit.toFixed(
+                    2
+                  )
+                ),
 
-          const { data: publicUrl } =
-            supabaseAdmin.storage
-              .from("invoices")
-              .getPublicUrl(
-                filePath
-              );
+              cgst: Number(
+                cgst.toFixed(2)
+              ),
 
-          const invoiceUrl =
-            publicUrl.publicUrl;
+              sgst: Number(
+                sgst.toFixed(2)
+              ),
 
-          /* ======================================== */
-          /* 💾 SAVE IN DATABASE */
-          /* ======================================== */
+              igst: Number(
+                igst.toFixed(2)
+              ),
 
-          const {
-            error: invoiceError,
-          } = await supabaseAdmin
-            .from("invoices")
-            .insert({
-              order_id: order.id,
+              grandTotal:
+                Number(
+                  grandTotal.toFixed(
+                    2
+                  )
+                ),
 
-              seller_id: sellerId,
+              itemCount:
+                sellerItems.length,
 
-              user_id:
-                order.customer_id,
+              paymentMethod:
+                order.payment_method,
 
-              invoice_number:
-                invoiceNumber,
+              paymentStatus:
+                order.payment_status,
+            },
+          });
 
-              pdf_url: invoiceUrl,
+      if (invoiceError) {
+        console.error(
+          "INVOICE DB ERROR:",
+          invoiceError
+        );
 
-              amount: grandTotal,
+        continue;
+      }
 
-              type: "seller_invoice",
+      /* =======================================================
+         ✅ PUSH URL
+      ======================================================= */
 
-              details: {
-                totalGST,
+      invoiceUrls.push(
+        invoiceUrl
+      );
+    }
 
-                totalTaxable,
-
-                cgst,
-
-                sgst,
-
-                igst,
-
-                grandTotal,
-
-                itemCount:
-                  sellerItems.length,
-
-                paymentMethod:
-                  order.payment_method,
-
-                paymentStatus:
-                  order.payment_status,
-              },
-            });
-
-          if (invoiceError) {
-            console.error(
-              "Invoice DB save failed",
-              invoiceError
-            );
-
-            return;
-          }
-
-          /* ======================================== */
-          /* ✅ PUSH URL */
-          /* ======================================== */
-
-          invoiceUrls.push(invoiceUrl);
-        }
-      )
-    );
-
-    /* ======================================== */
-    /* ✅ RETURN */
-    /* ======================================== */
+    /* =======================================================
+       ✅ RETURN
+    ======================================================= */
 
     return {
       success: true,
-      invoices: invoiceUrls,
+
+      invoices:
+        invoiceUrls,
     };
   } catch (error: any) {
     console.error(
-      "Invoice generation failed",
+      "INVOICE ERROR:",
       error
     );
 
     return {
       success: false,
+
       message:
         error?.message ||
         "Failed to generate invoices",

@@ -1,19 +1,30 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import {
+  useMemo,
+  useState,
+  useCallback,
+  useEffect,
+} from "react";
+
 import Image from "next/image";
+
 import VariantSelector from "@/components/VariantSelector";
+
 import AddToCartButton from "./AddToCartButton";
+
 import BuyNowButton from "@/components/BuyNowButton";
+
 import WishlistButton from "@/components/WishlistButton";
 
 export default function ProductClient({
   product,
   isWishlisted,
 }: any) {
-  /* ============================= */
-  /* 🛑 SAFETY */
-  /* ============================= */
+
+  /* =========================================================
+     🛑 SAFETY
+  ========================================================= */
 
   if (!product) {
     return (
@@ -23,205 +34,646 @@ export default function ProductClient({
     );
   }
 
-  /* ============================= */
-  /* 📦 DATA */
-  /* ============================= */
+  /* =========================================================
+     📦 VARIANTS
+  ========================================================= */
 
-  const variants = product.product_variants || [];
-  const hasVariants = variants.length > 0;
+  const variants =
+    product.product_variants || [];
 
-  const [selectedVariant, setSelectedVariant] = useState<any>(null);
+  const hasVariants =
+    variants.length > 0;
 
-  /* ============================= */
-  /* 🖼 IMAGES */
-  /* ============================= */
+  /* =========================================================
+     🎯 DEFAULT VARIANT
+  ========================================================= */
 
-  const images =
-    product.product_images?.map((i: any) => i?.url).filter(Boolean) || [];
+  const defaultVariant =
+    variants.find(
+      (variant: any) =>
+        Number(
+          variant.stock || 0
+        ) -
+          Number(
+            variant.reserved_stock ||
+              0
+          ) >
+        0
+    ) ||
+    variants[0] ||
+    null;
 
-  const safeImages =
-    images.length > 0 ? images : ["/placeholder.svg"];
-
-  const [selectedImage, setSelectedImage] = useState(
-    safeImages[0]
+  const [
+    selectedVariant,
+    setSelectedVariant,
+  ] = useState<any>(
+    defaultVariant
   );
 
-  /* ============================= */
-  /* 💰 PRICE ENGINE (FINAL FIX) */
-  /* ============================= */
+  /* =========================================================
+     🎨 GET VARIANT COLOR
+  ========================================================= */
 
-  const getVariantPrice = (v: any) => {
-    if (!v) return 0;
+  const selectedColor =
+    selectedVariant?.color
+      ? String(
+          selectedVariant.color
+        ).toLowerCase()
+      : selectedVariant
+          ?.attributes?.color
+      ? String(
+          selectedVariant
+            .attributes.color
+        ).toLowerCase()
+      : null;
 
-    return (
-      Number(v.selling_price) || // ✅ primary
-      Number(v.cost_price) || // fallback
-      0
+  /* =========================================================
+     🖼 ALL IMAGES
+  ========================================================= */
+
+  const allImages =
+    Array.isArray(
+      product.product_images
+    )
+      ? product.product_images
+      : [];
+
+  /* =========================================================
+     🎨 FILTER IMAGES BY COLOR
+  ========================================================= */
+
+  const variantImages =
+    useMemo(() => {
+
+      /* 🚫 NO COLOR */
+      if (!selectedColor) {
+
+        return allImages;
+      }
+
+      /* 🎨 MATCH COLOR */
+      const matched =
+        allImages.filter(
+          (img: any) => {
+
+            if (
+              !img?.color
+            ) {
+              return false;
+            }
+
+            return (
+              String(
+                img.color
+              ).toLowerCase() ===
+              selectedColor
+            );
+          }
+        );
+
+      /* ✅ COLOR IMAGES FOUND */
+      if (
+        matched.length > 0
+      ) {
+
+        return matched;
+      }
+
+      /* 🔄 FALLBACK */
+      return allImages;
+
+    }, [
+      allImages,
+      selectedColor,
+    ]);
+
+  /* =========================================================
+     🖼 SAFE IMAGE URLS
+  ========================================================= */
+
+  const safeImages =
+    variantImages.length > 0
+      ? variantImages
+          .map(
+            (img: any) =>
+              img?.url
+          )
+          .filter(Boolean)
+      : [
+          "/placeholder.svg",
+        ];
+
+  /* =========================================================
+     🖼 SELECTED IMAGE
+  ========================================================= */
+
+  const [
+    selectedImage,
+    setSelectedImage,
+  ] = useState<string>(
+    safeImages?.[0] ||
+      "/placeholder.svg"
+  );
+
+  /* =========================================================
+     🔄 CHANGE IMAGE ON COLOR CHANGE
+  ========================================================= */
+
+ /* =========================================================
+   🔄 CHANGE IMAGE ON COLOR CHANGE
+========================================================= */
+
+useEffect(() => {
+
+  if (
+    safeImages.length > 0
+  ) {
+
+    setSelectedImage(
+      safeImages[0]
+    );
+  }
+
+}, [selectedColor]);
+
+  /* =========================================================
+     💰 PRICE HELPERS
+  ========================================================= */
+
+  const getVariantPrice = (
+    variant: any
+  ) => {
+
+    if (!variant) {
+      return 0;
+    }
+
+    return Number(
+      variant.selling_price ||
+        variant.price ||
+        0
     );
   };
 
-  // ✅ MIN PRICE (important)
-  const minPrice = useMemo(() => {
-    if (!variants.length) return 0;
+  /* =========================================================
+     💰 PRICE RANGE
+  ========================================================= */
 
-    const prices = variants
-      .map(getVariantPrice)
-      .filter((p) => p > 0);
+  const minPrice =
+    useMemo(() => {
 
-    return prices.length ? Math.min(...prices) : 0;
-  }, [variants]);
+      const prices =
+        variants
+          .map(
+            getVariantPrice
+          )
+          .filter(
+            (
+              price: number
+            ) => price > 0
+          );
 
-  // ✅ CURRENT PRICE
-  const price = selectedVariant
-    ? getVariantPrice(selectedVariant)
-    : minPrice;
+      return prices.length
+        ? Math.min(
+            ...prices
+          )
+        : 0;
 
-  /* ============================= */
-  /* 💰 MRP & DISCOUNT */
-  /* ============================= */
+    }, [variants]);
 
-  const mrp =
-    selectedVariant?.mrp && selectedVariant.mrp > price
-      ? Number(selectedVariant.mrp)
-      : price > 0
-      ? Math.round(price * 1.2)
-      : 0;
+  const maxPrice =
+    useMemo(() => {
+
+      const prices =
+        variants
+          .map(
+            getVariantPrice
+          )
+          .filter(
+            (
+              price: number
+            ) => price > 0
+          );
+
+      return prices.length
+        ? Math.max(
+            ...prices
+          )
+        : 0;
+
+    }, [variants]);
+
+  /* =========================================================
+     💰 CURRENT PRICE
+  ========================================================= */
+
+  const currentPrice =
+    selectedVariant
+      ? getVariantPrice(
+          selectedVariant
+        )
+      : minPrice;
+
+  /* =========================================================
+     💰 MRP
+  ========================================================= */
+
+  const mrp = Number(
+    selectedVariant?.mrp ||
+      currentPrice * 1.2
+  );
 
   const discount =
-    mrp > price
-      ? Math.round(((mrp - price) / mrp) * 100)
+    mrp > currentPrice
+      ? Math.round(
+          (
+            (mrp -
+              currentPrice) /
+            mrp
+          ) *
+            100
+        )
       : 0;
 
-  const stock = selectedVariant?.stock ?? 0;
+  /* =========================================================
+     📦 STOCK
+  ========================================================= */
 
-  /* ============================= */
-  /* 🚀 UI */
-  /* ============================= */
+  const stock =
+    Number(
+      selectedVariant?.stock ||
+        0
+    ) -
+    Number(
+      selectedVariant?.reserved_stock ||
+        0
+    );
+
+  const inStock =
+    stock > 0;
+
+  /* =========================================================
+     🎯 VARIANT SELECT
+  ========================================================= */
+
+  const handleVariantSelect =
+    useCallback(
+      (variant: any) => {
+
+        setSelectedVariant(
+          variant
+        );
+
+        /* 🔥 FORCE FIRST IMAGE */
+        const color =
+          variant?.color
+            ? String(
+                variant.color
+              ).toLowerCase()
+            : variant
+                ?.attributes
+                ?.color
+            ? String(
+                variant
+                  .attributes
+                  .color
+              ).toLowerCase()
+            : null;
+
+        if (!color) {
+          return;
+        }
+
+        const matched =
+          allImages.filter(
+            (img: any) =>
+              String(
+                img?.color || ""
+              ).toLowerCase() ===
+              color
+          );
+
+        if (
+          matched.length > 0
+        ) {
+
+          setSelectedImage(
+            matched[0].url
+          );
+        }
+
+      },
+      [allImages]
+    );
+
+  /* =========================================================
+     🚀 UI
+  ========================================================= */
 
   return (
-    <div className="bg-gray-50 min-h-screen pb-24">
-      <div className="max-w-7xl mx-auto px-4 py-8 grid md:grid-cols-2 gap-10">
+    <div className="bg-zinc-50 min-h-screen pb-24">
 
-        {/* IMAGE */}
+      <div className="max-w-7xl mx-auto px-4 py-8 grid lg:grid-cols-2 gap-10">
+
+        {/* =========================================================
+           🖼 LEFT
+        ========================================================= */}
+
         <div>
-          <div className="relative aspect-square bg-white rounded-2xl overflow-hidden">
 
-            <div className="absolute top-3 right-3 z-10">
+          <div className="relative aspect-square bg-white rounded-3xl overflow-hidden border">
+
+            <div className="absolute top-4 right-4 z-20">
+
               <WishlistButton
-                productId={product.id}
-                initial={isWishlisted}
+                productId={
+                  product.id
+                }
+                initial={
+                  isWishlisted
+                }
               />
+
             </div>
 
             <Image
-              src={selectedImage}
-              alt={product.name}
+              src={
+                selectedImage
+              }
+              alt={
+                product.name
+              }
               fill
+              priority
               className="object-cover"
-              onError={() => setSelectedImage("/placeholder.svg")}
               sizes="(max-width: 768px) 100vw, 50vw"
+              onError={() =>
+                setSelectedImage(
+                  "/placeholder.svg"
+                )
+              }
             />
+
           </div>
 
-          {/* THUMBNAILS */}
-          <div className="flex gap-2 mt-3">
-            {safeImages.map((img: string, i: number) => (
-              <Image
-                key={i}
-                src={img}
-                alt="thumb"
-                width={64}
-                height={64}
-                onClick={() => setSelectedImage(img)}
-                className={`rounded cursor-pointer border ${
-                  selectedImage === img
-                    ? "border-black"
-                    : "border-transparent"
-                }`}
-              />
-            ))}
+          {/* =========================================================
+             🖼 THUMBNAILS
+          ========================================================= */}
+
+          <div className="flex gap-3 mt-4 overflow-x-auto">
+
+            {safeImages.map(
+              (
+                image: string,
+                index: number
+              ) => (
+
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() =>
+                    setSelectedImage(
+                      image
+                    )
+                  }
+                  className={`relative w-20 h-20 rounded-2xl overflow-hidden border-2 transition shrink-0 ${
+                    selectedImage ===
+                    image
+                      ? "border-black"
+                      : "border-zinc-200"
+                  }`}
+                >
+
+                  <Image
+                    src={image}
+                    alt={`Thumbnail ${
+                      index + 1
+                    }`}
+                    fill
+                    className="object-cover"
+                  />
+
+                </button>
+              )
+            )}
+
           </div>
         </div>
 
-        {/* DETAILS */}
-        <div className="space-y-4">
+        {/* =========================================================
+           📦 RIGHT
+        ========================================================= */}
 
-          <h1 className="text-2xl font-bold">
-            {product.name}
-          </h1>
+        <div className="space-y-6">
 
-          {/* 💰 PRICE */}
+          {/* =========================================================
+             🏷 TITLE
+          ========================================================= */}
+
           <div>
-            <span className="text-2xl font-bold">
-              {price > 0 ? `₹${price}` : "Price unavailable"}
-            </span>
 
-            {mrp > price && (
-              <span className="ml-2 line-through text-gray-400">
-                ₹{mrp}
-              </span>
+            <h1 className="text-3xl font-bold text-zinc-900 leading-tight">
+
+              {product.name}
+
+            </h1>
+
+            {variants.length >
+              1 && (
+
+              <p className="text-sm text-zinc-500 mt-2">
+
+                Price Range:
+                {" "}
+                ₹{minPrice}
+                {" - "}
+                ₹{maxPrice}
+
+              </p>
             )}
+
           </div>
 
-          {/* 👇 STARTING PRICE LABEL */}
-          {!selectedVariant && variants.length > 1 && (
-            <p className="text-sm text-gray-500">
-              Starting from ₹{minPrice}
-            </p>
-          )}
+          {/* =========================================================
+             💰 PRICE
+          ========================================================= */}
 
-          {/* DISCOUNT */}
-          {discount > 0 && (
-            <p className="text-green-600 text-sm">
-              {discount}% OFF
-            </p>
-          )}
+          <div className="space-y-2">
 
-          {/* STOCK */}
-          {selectedVariant ? (
-            stock > 0 ? (
-              <p className="text-green-600 text-sm">
-                In Stock ({stock})
+            <div className="flex items-center gap-3 flex-wrap">
+
+              <span className="text-4xl font-bold text-zinc-900">
+
+                ₹
+                {currentPrice.toFixed(
+                  0
+                )}
+
+              </span>
+
+              {mrp >
+                currentPrice && (
+
+                <span className="text-xl text-zinc-400 line-through">
+
+                  ₹
+                  {mrp.toFixed(
+                    0
+                  )}
+
+                </span>
+              )}
+
+              {discount >
+                0 && (
+
+                <span className="bg-green-100 text-green-700 text-sm font-semibold px-3 py-1 rounded-full">
+
+                  {discount}% OFF
+
+                </span>
+              )}
+
+            </div>
+
+            <p className="text-sm text-zinc-500">
+
+              Inclusive of all taxes
+
+            </p>
+
+          </div>
+
+          {/* =========================================================
+             📦 STOCK
+          ========================================================= */}
+
+          <div>
+
+            {inStock ? (
+
+              <p className="text-green-600 font-medium">
+
+                In Stock (
+                {stock}
+                {" "}
+                left)
+
               </p>
+
             ) : (
-              <p className="text-red-500 text-sm">
+
+              <p className="text-red-500 font-medium">
+
                 Out of Stock
+
               </p>
-            )
-          ) : (
-            <p className="text-gray-500 text-sm">
-              Select variant to check stock
-            </p>
+            )}
+
+          </div>
+
+          {/* =========================================================
+             🎨 SELECTED COLOR
+          ========================================================= */}
+
+          {selectedVariant?.color && (
+
+            <div className="text-sm text-zinc-600">
+
+              Selected Color:
+              {" "}
+              <span className="font-semibold text-zinc-900">
+                {
+                  selectedVariant.color
+                }
+              </span>
+
+            </div>
           )}
 
-          {/* DESCRIPTION */}
-          <p className="text-gray-600">
-            {product.description}
-          </p>
+          {/* =========================================================
+             📝 DESCRIPTION
+          ========================================================= */}
 
-          {/* VARIANTS */}
+          {product.description && (
+
+            <div className="bg-white rounded-3xl border p-5">
+
+              <h3 className="font-semibold text-lg mb-3">
+
+                Description
+
+              </h3>
+
+              <p className="text-zinc-600 leading-7 whitespace-pre-line">
+
+                {
+                  product.description
+                }
+
+              </p>
+
+            </div>
+          )}
+
+          {/* =========================================================
+             🎨 VARIANTS
+          ========================================================= */}
+
           {hasVariants && (
-            <VariantSelector
-              variants={variants}
-              onSelect={(variant: any) =>
-                setSelectedVariant(variant)
-              }
-            />
+
+            <div className="bg-white rounded-3xl border p-5">
+
+              <h3 className="font-semibold text-lg mb-4">
+
+                Select Variant
+
+              </h3>
+
+              <VariantSelector
+                variants={
+                  variants
+                }
+                onSelect={
+                  handleVariantSelect
+                }
+              />
+
+            </div>
           )}
 
-          {/* ACTIONS */}
-          <div className="flex gap-3 pt-4">
+          {/* =========================================================
+             🛒 ACTIONS
+          ========================================================= */}
+
+          <div className="flex gap-4 pt-2">
+
             <AddToCartButton
-              productId={product.id}
-              variantId={selectedVariant?.id}
-              disabled={!selectedVariant || stock <= 0}
+              productId={
+                product.id
+              }
+              variantId={
+                selectedVariant?.id
+              }
+              disabled={
+                !selectedVariant ||
+                !inStock
+              }
             />
 
             <BuyNowButton
-              productId={product.id}
-              variantId={selectedVariant?.id}
-              disabled={!selectedVariant || stock <= 0}
+              productId={
+                product.id
+              }
+              variantId={
+                selectedVariant?.id
+              }
+              disabled={
+                !selectedVariant ||
+                !inStock
+              }
             />
+
           </div>
 
         </div>

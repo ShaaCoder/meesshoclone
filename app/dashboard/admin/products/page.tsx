@@ -27,23 +27,44 @@ export default async function Page() {
   /* ============================= */
   /* 📦 PRODUCTS */
   /* ============================= */
-  const { data: products } = await supabaseAdmin
-    .from("products")
-    .select(`
-      id,
+const { data: products } = await supabaseAdmin
+  .from("products")
+  .select(`
+    id,
+    name,
+    description,
+    created_at,
+    approval_status,
+    status,
+    seller_id,
+
+    users:seller_id(
       name,
-      approval_status,
-      seller_id,
-      users:seller_id(name, email)
-    `)
-    .order("created_at", { ascending: false });
+      email,
+      phone
+    ),
+
+    categories(
+      name
+    ),
+
+    product_images(
+      url,
+      is_primary
+    )
+  `)
+  .order("created_at", {
+    ascending: false,
+  });
 
   /* ============================= */
   /* 📦 VARIANTS */
   /* ============================= */
   const { data: variants } = await supabaseAdmin
     .from("product_variants")
-    .select("*");
+   .select(`
+  *
+`);
 
   /* ============================= */
   /* 🔥 MAP VARIANTS BY PRODUCT */

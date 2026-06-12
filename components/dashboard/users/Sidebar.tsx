@@ -87,7 +87,7 @@ export default function Sidebar({ user }: { user: any }) {
           </div>
           <div>
             <p className="font-semibold text-lg tracking-tight">
-              ShopSphere
+              YourShop
             </p>
             <p className="text-xs text-zinc-500 -mt-1">
               E-commerce

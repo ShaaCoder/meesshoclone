@@ -128,7 +128,7 @@ export default async function ReturnRequestPage({
     "/placeholder.png";
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
+    <div className="max-w-5xl mx-auto p-6 text-black">
 
       <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-8">
 
@@ -301,7 +301,7 @@ export default async function ReturnRequestPage({
 
    <form
   action={createReturnRequest}
-  className="space-y-6"
+  className="space-y-6 text-black"
 >
 
   <input
@@ -332,37 +332,37 @@ export default async function ReturnRequestPage({
     <select
       name="reason"
       required
-      className="w-full h-14 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-5 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500"
+      className="w-full h-14 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white text-black dark:bg-zinc-950 px-5  dark:text-white outline-none focus:ring-2 focus:ring-green-500"
     >
       <option value="">
         Choose reason
       </option>
 
-      <option value="Wrong Product">
+      <option value="Wrong Product" className="text-black ">
         Wrong Product
       </option>
 
-      <option value="Damaged Product">
+      <option value="Damaged Product" className="text-black ">
         Damaged Product
       </option>
 
-      <option value="Defective Product">
+      <option value="Defective Product" className="text-black ">
         Defective Product
       </option>
 
-      <option value="Quality Not Good">
+      <option value="Quality Not Good" className="text-black ">
         Quality Not Good
       </option>
 
-      <option value="Size Issue">
+      <option value="Size Issue"  className="text-black ">
         Size Issue
       </option>
 
-      <option value="Missing Item">
+      <option value="Missing Item" className="text-black ">
         Missing Item
       </option>
 
-      <option value="Other">
+      <option value="Other" className="text-black ">
         Other
       </option>
     </select>
@@ -431,7 +431,7 @@ export default async function ReturnRequestPage({
       name="description"
       rows={6}
       placeholder="Please explain the issue with the product..."
-      className="w-full rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-5 py-4 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500 resize-none"
+      className="w-full rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-5 py-4 text-black  outline-none focus:ring-2 focus:ring-green-500 resize-none"
     />
   </div>
 

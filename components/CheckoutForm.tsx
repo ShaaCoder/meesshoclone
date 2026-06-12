@@ -17,6 +17,8 @@ type PlaceOrderResponse = {
   orderId: string;
 
   orderCode: string;
+
+  totalAmount?: number;
 };
 
 declare global {
@@ -29,14 +31,18 @@ export default function CheckoutForm({
   user,
   addresses,
 }: CheckoutFormProps) {
-  const router = useRouter();
 
-  const [isPending, setIsPending] =
-    useState(false);
+  const router =
+    useRouter();
 
-  /* ============================= */
-  /* 📍 DEFAULT ADDRESS */
-  /* ============================= */
+  const [
+    isPending,
+    setIsPending,
+  ] = useState(false);
+
+  /* =========================================================
+     📍 DEFAULT ADDRESS
+  ========================================================= */
 
   const defaultAddress =
     addresses.find(
@@ -52,48 +58,58 @@ export default function CheckoutForm({
     defaultAddress?.id || ""
   );
 
-  /* ============================= */
-  /* 📝 FORM STATE */
-  /* ============================= */
+  /* =========================================================
+     📝 FORM STATE
+  ========================================================= */
 
-  const [formData, setFormData] =
-    useState({
-      name:
-        user?.user_metadata?.name ||
-        "",
+  const [
+    formData,
+    setFormData,
+  ] = useState({
+    name:
+      user?.user_metadata
+        ?.name || "",
 
-      phone: "",
+    phone:
+      defaultAddress?.phone ||
+      "",
 
-      address: "",
+    address: "",
 
-      city: "",
+    city: "",
 
-      state: "",
+    state: "",
 
-      pincode: "",
-    });
+    pincode: "",
+  });
 
-  /* ============================= */
-  /* 🔄 INPUT CHANGE */
-  /* ============================= */
+  /* =========================================================
+     🔄 INPUT CHANGE
+  ========================================================= */
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    setFormData((prev) => ({
-      ...prev,
 
-      [e.target.name]:
-        e.target.value,
-    }));
+    setFormData(
+      (prev) => ({
+        ...prev,
+
+        [e.target.name]:
+          e.target.value,
+      })
+    );
   };
 
-  /* ============================= */
-  /* ✅ VALIDATION */
-  /* ============================= */
+  /* =========================================================
+     ✅ VALIDATION
+  ========================================================= */
 
   const validate = () => {
-    if (selectedAddressId) {
+
+    if (
+      selectedAddressId
+    ) {
       return true;
     }
 
@@ -105,6 +121,7 @@ export default function CheckoutForm({
       !formData.state.trim() ||
       !formData.pincode.trim()
     ) {
+
       alert(
         "Please fill all required fields"
       );
@@ -117,6 +134,7 @@ export default function CheckoutForm({
         formData.phone
       )
     ) {
+
       alert(
         "Invalid phone number"
       );
@@ -129,6 +147,7 @@ export default function CheckoutForm({
         formData.pincode
       )
     ) {
+
       alert(
         "Invalid pincode"
       );
@@ -139,342 +158,608 @@ export default function CheckoutForm({
     return true;
   };
 
-  /* ============================= */
-  /* 💳 LOAD RAZORPAY */
-  /* ============================= */
+  /* =========================================================
+     💳 LOAD RAZORPAY
+  ========================================================= */
 
-  const loadRazorpay = () => {
-    return new Promise<boolean>(
-      (resolve) => {
-        if (
-          window.Razorpay
-        ) {
-          return resolve(true);
-        }
+  const loadRazorpay =
+    () => {
 
-        const script =
-          document.createElement(
-            "script"
+      return new Promise<boolean>(
+        (
+          resolve
+        ) => {
+
+          if (
+            window.Razorpay
+          ) {
+
+            return resolve(
+              true
+            );
+          }
+
+          const script =
+            document.createElement(
+              "script"
+            );
+
+          script.src =
+            "https://checkout.razorpay.com/v1/checkout.js";
+
+          script.async =
+            true;
+
+          script.onload =
+            () => {
+
+              console.log(
+                "✅ RAZORPAY SDK LOADED"
+              );
+
+              resolve(
+                true
+              );
+            };
+
+          script.onerror =
+            () => {
+
+              console.error(
+                "❌ RAZORPAY SDK FAILED"
+              );
+
+              resolve(
+                false
+              );
+            };
+
+          document.body.appendChild(
+            script
           );
+        }
+      );
+    };
 
-        script.src =
-          "https://checkout.razorpay.com/v1/checkout.js";
+  /* =========================================================
+     ❌ PAYMENT FAILED
+  ========================================================= */
 
-        script.onload = () =>
-          resolve(true);
+  const markPaymentFailed =
+    async (
+      orderId: string,
+      reason?: string
+    ) => {
 
-        script.onerror = () =>
-          resolve(false);
+      try {
 
-        document.body.appendChild(
-          script
+        await fetch(
+          "/api/payment/fail",
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify(
+                {
+                  orderId,
+                  reason,
+                }
+              ),
+          }
+        );
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          "❌ FAILED TO MARK PAYMENT FAILED:",
+          error
         );
       }
-    );
-  };
+    };
 
-  /* ============================= */
-  /* 🚀 MAIN SUBMIT */
-  /* ============================= */
+  /* =========================================================
+     🚀 MAIN SUBMIT
+  ========================================================= */
 
-  const handleSubmit = async (
-    paymentMethod:
-      | "cod"
-      | "online"
-  ) => {
-    if (isPending) return;
-
-    if (!validate()) return;
-
-    setIsPending(true);
-
-    try {
-      /* ============================= */
-      /* 🧾 CREATE ORDER */
-      /* ============================= */
-
-      const order: PlaceOrderResponse =
-        await placeOrder({
-          paymentMethod,
-
-          addressId:
-            selectedAddressId ||
-            undefined,
-
-          ...(selectedAddressId
-            ? {}
-            : formData),
-        });
+  const handleSubmit =
+    async (
+      paymentMethod:
+        | "cod"
+        | "online"
+    ) => {
 
       if (
-        !order?.success ||
-        !order?.orderId
+        isPending
       ) {
-        throw new Error(
-          "Order creation failed"
-        );
-      }
-
-      /* ============================= */
-      /* 💵 COD FLOW */
-      /* ============================= */
-
-      if (
-        paymentMethod === "cod"
-      ) {
-        alert(
-          "Order placed successfully ✅"
-        );
-
-        router.push(
-          `/dashboard/user/orders/${order.orderCode}`
-        );
-
         return;
       }
 
-      /* ============================= */
-      /* 💳 LOAD RAZORPAY */
-      /* ============================= */
-
-      const razorpayLoaded =
-        await loadRazorpay();
-
-      if (!razorpayLoaded) {
-        throw new Error(
-          "Failed to load Razorpay"
-        );
+      if (
+        !validate()
+      ) {
+        return;
       }
 
-      /* ============================= */
-      /* 💳 CREATE PAYMENT ORDER */
-      /* ============================= */
-
-      const res = await fetch(
-        "/api/payment/create-order",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            orderId:
-              order.orderId,
-          }),
-        }
-      );
-
-      let data: any = null;
+      let createdOrder:
+        | PlaceOrderResponse
+        | undefined;
 
       try {
-        data =
-          await res.json();
-      } catch {
-        throw new Error(
-          "Invalid payment response"
+
+        setIsPending(
+          true
         );
-      }
 
-      if (!res.ok) {
-        throw new Error(
-          data?.error ||
-            "Payment initialization failed"
+        console.log(
+          "🚀 START CHECKOUT"
         );
-      }
 
-      /* ============================= */
-      /* 💳 RAZORPAY OPTIONS */
-      /* ============================= */
+        /* =========================================================
+           🧾 CREATE ORDER
+        ========================================================= */
 
-      const options = {
-        key: process.env
-          .NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        createdOrder =
+          await placeOrder(
+            {
+              paymentMethod,
 
-        amount:
-          data.amount,
+              addressId:
+                selectedAddressId ||
+                undefined,
 
-        currency:
-          data.currency,
+              ...(selectedAddressId
+                ? {}
+                : formData),
+            }
+          );
 
-        order_id:
-          data.id,
+        console.log(
+          "🧾 ORDER RESPONSE:",
+          createdOrder
+        );
 
-        name: "ShopSphere",
+        if (
+          !createdOrder
+            ?.success ||
+          !createdOrder
+            ?.orderId
+        ) {
 
-        description:
-          "Order Payment",
+          throw new Error(
+            "Order creation failed"
+          );
+        }
 
-        prefill: {
-          name:
-            formData.name,
+        /* =========================================================
+           💵 COD
+        ========================================================= */
 
-          contact:
-            formData.phone,
-        },
+        if (
+          paymentMethod ===
+          "cod"
+        ) {
 
-        theme: {
-          color: "#000000",
-        },
+          alert(
+            "Order placed successfully ✅"
+          );
 
-        modal: {
-          ondismiss:
-            function () {
-              console.log(
-                "Payment popup closed"
-              );
+          router.push(
+            `/dashboard/user/orders/${createdOrder.orderCode}`
+          );
 
-              alert(
-                "Payment cancelled"
-              );
-            },
-        },
+          return;
+        }
 
-        handler:
-          async function (
-            response: any
-          ) {
-            try {
-              /* ============================= */
-              /* ✅ VERIFY PAYMENT */
-              /* ============================= */
+        /* =========================================================
+           💳 LOAD RAZORPAY
+        ========================================================= */
 
-              const verifyRes =
-                await fetch(
-                  "/api/payment/verify",
+        const razorpayLoaded =
+          await loadRazorpay();
+
+        if (
+          !razorpayLoaded
+        ) {
+
+          await markPaymentFailed(
+            createdOrder.orderId,
+            "Failed to load Razorpay SDK"
+          );
+
+          throw new Error(
+            "Failed to load Razorpay SDK"
+          );
+        }
+
+        /* =========================================================
+           💳 CREATE RAZORPAY ORDER
+        ========================================================= */
+
+        const paymentRes =
+          await fetch(
+            "/api/payment/create-order",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify(
                   {
-                    method:
-                      "POST",
-
-                    headers: {
-                      "Content-Type":
-                        "application/json",
-                    },
-
-                    body: JSON.stringify(
-                      {
-                        ...response,
-
-                        orderId:
-                          order.orderId,
-                      }
-                    ),
+                    orderId:
+                      createdOrder.orderId,
                   }
+                ),
+            }
+          );
+
+        const paymentData =
+          await paymentRes.json();
+
+        console.log(
+          "💳 PAYMENT RESPONSE:",
+          paymentData
+        );
+
+        if (
+          !paymentRes.ok
+        ) {
+
+          await markPaymentFailed(
+            createdOrder.orderId,
+            paymentData?.error
+          );
+
+          throw new Error(
+            paymentData?.error ||
+              "Failed to create payment order"
+          );
+        }
+
+        /* =========================================================
+           ✅ IMPORTANT FIX
+        ========================================================= */
+
+        const razorpayOrder =
+          paymentData.razorpayOrder;
+
+        if (
+          !razorpayOrder?.id
+        ) {
+
+          throw new Error(
+            "Invalid Razorpay order response"
+          );
+        }
+
+        /* =========================================================
+           💳 OPTIONS
+        ========================================================= */
+
+        const options = {
+
+          key:
+            process.env
+              .NEXT_PUBLIC_RAZORPAY_KEY_ID,
+
+          amount:
+            razorpayOrder.amount,
+
+          currency:
+            razorpayOrder.currency,
+
+          order_id:
+            razorpayOrder.id,
+
+          name:
+            "YourShop",
+
+          description:
+            "Order Payment",
+
+          image:
+            "/logo.png",
+
+          prefill: {
+
+            name:
+              user?.user_metadata
+                ?.name || "",
+
+            email:
+              user?.email || "",
+
+            contact:
+              formData.phone ||
+              addresses?.[0]
+                ?.phone ||
+              "",
+          },
+
+          notes: {
+
+            internal_order_id:
+              createdOrder.orderId,
+          },
+
+          theme: {
+            color:
+              "#000000",
+          },
+
+          retry: {
+            enabled:
+              true,
+          },
+
+          modal: {
+
+            escape:
+              false,
+
+            ondismiss:
+              async function () {
+
+                console.log(
+                  "❌ PAYMENT POPUP CLOSED"
                 );
 
-              let verifyData: any =
-                null;
+                await markPaymentFailed(
+                  createdOrder!.orderId,
+                  "Payment popup closed"
+                );
+
+                alert(
+                  "Payment cancelled"
+                );
+              },
+          },
+
+          /* =========================================================
+             ✅ SUCCESS
+          ========================================================= */
+
+          handler:
+            async function (
+              response: any
+            ) {
+
+              console.log(
+                "✅ RAZORPAY SUCCESS:",
+                response
+              );
+
+              /* =========================================================
+                 ✅ VALIDATION
+              ========================================================= */
+
+              if (
+                !response
+                  ?.razorpay_payment_id ||
+                !response
+                  ?.razorpay_order_id ||
+                !response
+                  ?.razorpay_signature
+              ) {
+
+                console.error(
+                  "❌ INVALID RAZORPAY RESPONSE",
+                  response
+                );
+
+                await markPaymentFailed(
+                  createdOrder!.orderId,
+                  "Missing Razorpay response fields"
+                );
+
+                alert(
+                  "Payment verification failed"
+                );
+
+                return;
+              }
 
               try {
-                verifyData =
+
+                /* =========================================================
+                   ✅ VERIFY
+                ========================================================= */
+
+                const verifyRes =
+                  await fetch(
+                    "/api/payment/verify",
+                    {
+                      method:
+                        "POST",
+
+                      headers: {
+                        "Content-Type":
+                          "application/json",
+                      },
+
+                      body:
+                        JSON.stringify(
+                          {
+                            razorpay_order_id:
+                              response.razorpay_order_id,
+
+                            razorpay_payment_id:
+                              response.razorpay_payment_id,
+
+                            razorpay_signature:
+                              response.razorpay_signature,
+
+                            orderId:
+                              createdOrder!.orderId,
+                          }
+                        ),
+                    }
+                  );
+
+                const verifyData =
                   await verifyRes.json();
-              } catch {
-                throw new Error(
-                  "Invalid verify response"
-                );
-              }
 
-              if (
-                !verifyRes.ok
-              ) {
-                throw new Error(
-                  verifyData?.error ||
+                console.log(
+                  "✅ VERIFY RESPONSE:",
+                  verifyData
+                );
+
+                if (
+                  !verifyRes.ok
+                ) {
+
+                  await markPaymentFailed(
+                    createdOrder!.orderId,
+                    verifyData?.error
+                  );
+
+                  throw new Error(
+                    verifyData?.error ||
                     "Payment verification failed"
-                );
-              }
+                  );
+                }
 
-              if (
-                verifyData.success
-              ) {
                 alert(
                   "Payment successful 🎉"
                 );
 
                 router.push(
-                  `/dashboard/user/orders/${order.orderCode}`
+                  `/dashboard/user/orders/${createdOrder!.orderCode}`
                 );
-              } else {
-                throw new Error(
-                  verifyData?.error ||
-                    "Verification failed"
+
+              } catch (
+                error: any
+              ) {
+
+                console.error(
+                  "❌ VERIFY ERROR:",
+                  error
+                );
+
+                await markPaymentFailed(
+                  createdOrder!.orderId,
+                  error?.message
+                );
+
+                alert(
+                  error?.message ||
+                  "Verification failed"
                 );
               }
-            } catch (
-              error: any
-            ) {
-              console.error(
-                "VERIFY ERROR:",
-                error
-              );
+            },
+        };
 
-              alert(
-                error?.message ||
-                  "Payment verification failed"
-              );
-            }
-          },
-      };
-
-      /* ============================= */
-      /* 💳 OPEN RAZORPAY */
-      /* ============================= */
-
-      const rzp =
-        new window.Razorpay(
+        console.log(
+          "💳 RAZORPAY OPTIONS:",
           options
         );
 
-      /* ============================= */
-      /* ❌ PAYMENT FAILED */
-      /* ============================= */
+        /* =========================================================
+           🚀 OPEN RAZORPAY
+        ========================================================= */
 
-      rzp.on(
-        "payment.failed",
-        function (
-          response: any
-        ) {
-          console.error(
-            "PAYMENT FAILED:",
-            response?.error
+        const razorpay =
+          new window.Razorpay(
+            options
           );
 
-          alert(
-            response?.error
-              ?.description ||
+        /* =========================================================
+           ❌ PAYMENT FAILED
+        ========================================================= */
+
+        razorpay.on(
+          "payment.failed",
+
+          async function (
+            response: any
+          ) {
+
+            console.error(
+              "❌ PAYMENT FAILED:",
+              response
+            );
+
+            await markPaymentFailed(
+              createdOrder!.orderId,
+
+              response?.error
+                ?.description ||
+                "Payment failed"
+            );
+
+            alert(
+              response?.error
+                ?.description ||
               "Payment failed ❌"
+            );
+          }
+        );
+
+        razorpay.open();
+
+      } catch (
+        err: any
+      ) {
+
+        console.error(
+          "❌ CHECKOUT ERROR:",
+          err
+        );
+
+        if (
+          createdOrder?.orderId &&
+          paymentMethod ===
+            "online"
+        ) {
+
+          await markPaymentFailed(
+            createdOrder.orderId,
+            err?.message
           );
         }
-      );
 
-      rzp.open();
-    } catch (err: any) {
-      console.error(
-        "CHECKOUT ERROR:",
-        err
-      );
+        alert(
+          err?.message ||
+            "Something went wrong"
+        );
 
-      alert(
-        err?.message ||
-          "Something went wrong"
-      );
-    } finally {
-      setIsPending(false);
-    }
-  };
+      } finally {
+
+        setIsPending(
+          false
+        );
+      }
+    };
 
   return (
+
     <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow border border-zinc-200 dark:border-zinc-800">
+
       <form className="space-y-5">
-        {/* ============================= */}
-        {/* 📍 ADDRESS SELECT */}
-        {/* ============================= */}
+
+        {/* =========================================================
+           📍 ADDRESS SELECT
+        ========================================================= */}
 
         {addresses.length >
           0 && (
+
           <div className="space-y-3">
+
             <div className="flex items-center justify-between">
+
               <p className="text-sm font-semibold">
                 Select Address
               </p>
@@ -493,8 +778,10 @@ export default function CheckoutForm({
             </div>
 
             <div className="space-y-3">
+
               {addresses.map(
                 (a) => (
+
                   <label
                     key={a.id}
                     className={`block border rounded-2xl p-4 cursor-pointer transition ${
@@ -504,6 +791,7 @@ export default function CheckoutForm({
                         : "border-zinc-200 dark:border-zinc-700"
                     }`}
                   >
+
                     <input
                       type="radio"
                       name="addressId"
@@ -525,11 +813,15 @@ export default function CheckoutForm({
                     </span>
 
                     <div className="text-sm text-zinc-500 mt-2">
+
                       {
                         a.address_line
                       }
-                      , {a.city},{" "}
-                      {a.state} -{" "}
+                      ,{" "}
+                      {a.city}
+                      ,{" "}
+                      {a.state}
+                      {" - "}
                       {a.pincode}
 
                       <div>
@@ -543,12 +835,13 @@ export default function CheckoutForm({
           </div>
         )}
 
-        {/* ============================= */}
-        {/* 📝 NEW ADDRESS */}
-        {/* ============================= */}
+        {/* =========================================================
+           📝 NEW ADDRESS
+        ========================================================= */}
 
         {!selectedAddressId && (
           <>
+
             <input
               type="text"
               name="name"
@@ -589,6 +882,7 @@ export default function CheckoutForm({
             />
 
             <div className="grid grid-cols-2 gap-4">
+
               <input
                 type="text"
                 name="city"
@@ -631,11 +925,12 @@ export default function CheckoutForm({
           </>
         )}
 
-        {/* ============================= */}
-        {/* 💳 BUTTONS */}
-        {/* ============================= */}
+        {/* =========================================================
+           💳 BUTTONS
+        ========================================================= */}
 
         <div className="pt-6 space-y-3">
+
           <button
             type="button"
             disabled={

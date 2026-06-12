@@ -5,8 +5,14 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createShipment, assignCourier } from "@/services/shiprocket";
 import { revalidatePath } from "next/cache";
 import {
-  releaseWalletBalance,
-} from "@/app/actions/wallet";
+  approveWithdrawRequest,
+  rejectWithdrawRequest,
+} from "@/services/wallet-engine";
+
+import {
+  createSellerSettlement,
+  releaseSellerSettlement,
+} from "@/services/settlement-engine";
 /* ============================= */
 /* 📦 PRODUCT APPROVAL */
 /* ============================= */
@@ -173,191 +179,117 @@ export async function updateProductVisibility(
   if (error) throw new Error(error.message);
 }
 
-/* ============================= */
-/* 💸 WITHDRAW SYSTEM */
-/* ============================= */
-
 export async function approveWithdraw(
   id: string
 ) {
   await requireAdmin();
 
-  /* ============================= */
-  /* 📦 GET REQUEST */
-  /* ============================= */
+  try {
 
-  const { data: withdraw, error } =
-    await supabaseAdmin
-      .from("withdraw_requests")
-      .select("*")
-      .eq("id", id)
-      .single();
+    /* ============================= */
+    /* APPROVE REQUEST */
+    /* ============================= */
 
-  if (error || !withdraw) {
-    throw new Error(
-      "Withdraw request not found"
-    );
-  }
-
-  if (withdraw.status !== "pending") {
-    throw new Error(
-      "Withdraw already processed"
-    );
-  }
-
-  /* ============================= */
-  /* 💰 GET WALLET */
-  /* ============================= */
-
-  const { data: wallet } =
-    await supabaseAdmin
-      .from("wallets")
-      .select("*")
-      .eq(
-        "seller_id",
-        withdraw.seller_id
-      )
-      .single();
-
-  if (!wallet) {
-    throw new Error(
-      "Wallet not found"
-    );
-  }
-
-  const withdrawAmount = Number(
-    withdraw.amount || 0
-  );
-
-  const balance = Number(
-    wallet.balance || 0
-  );
-
-  const lockedBalance = Number(
-    wallet.locked_balance || 0
-  );
-
-  /* ============================= */
-  /* 🚫 VALIDATION */
-  /* ============================= */
-
-  if (
-    lockedBalance < withdrawAmount
-  ) {
-    throw new Error(
-      "Insufficient locked balance"
-    );
-  }
-
-  if (balance < withdrawAmount) {
-    throw new Error(
-      "Insufficient wallet balance"
-    );
-  }
-
-  /* ============================= */
-  /* 💸 UPDATE WALLET */
-  /* ============================= */
-
-  const { error: walletError } =
-    await supabaseAdmin
-      .from("wallets")
-      .update({
-        balance:
-          balance - withdrawAmount,
-
-        locked_balance:
-          lockedBalance -
-          withdrawAmount,
-      })
-      .eq(
-        "seller_id",
-        withdraw.seller_id
-      );
-
-  if (walletError) {
-    console.error(walletError);
-
-    throw new Error(
-      "Failed to update wallet"
-    );
-  }
-
-  /* ============================= */
-  /* 🧾 TRANSACTION */
-  /* ============================= */
-
-  await supabaseAdmin
-    .from("wallet_transactions")
-    .insert({
-      seller_id:
-        withdraw.seller_id,
-
-      type: "debit",
-
-      amount: withdrawAmount,
-
-      reference_id: id,
-
-      note:
-        "Withdraw approved by admin",
+    await approveWithdrawRequest({
+      withdrawRequestId: id,
     });
 
-  /* ============================= */
-  /* ✅ UPDATE REQUEST */
-  /* ============================= */
+    /* ============================= */
+    /* FORCE STATUS = APPROVED */
+    /* IMPORTANT FIX */
+    /* ============================= */
 
-  await supabaseAdmin
-    .from("withdraw_requests")
-    .update({
-      status: "approved",
-    })
-    .eq("id", id);
+    const {
+      error: updateError,
+    } = await supabaseAdmin
+      .from("withdraw_requests")
+      .update({
+        status: "approved",
 
-  return {
-    success: true,
-  };
+        approved_at:
+          new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    if (updateError) {
+      throw new Error(
+        updateError.message
+      );
+    }
+
+    console.log(
+      "✅ WITHDRAW APPROVED"
+    );
+
+    /* ============================= */
+    /* REVALIDATE */
+    /* ============================= */
+
+    revalidatePath(
+      "/dashboard/admin/withdraw"
+    );
+
+    revalidatePath(
+      "/dashboard/seller/wallet"
+    );
+
+    return {
+      success: true,
+    };
+
+  } catch (error: any) {
+
+    console.error(
+      "APPROVE WITHDRAW ERROR:",
+      error
+    );
+
+    throw new Error(
+      error?.message ||
+      "Failed to approve withdraw"
+    );
+  }
 }
 
-export async function rejectWithdraw(id: string) {
+/* ============================= */
+/* ❌ REJECT WITHDRAW */
+/* ============================= */
+
+export async function rejectWithdraw(
+  id: string
+) {
   await requireAdmin();
 
-  const { data: withdraw } = await supabaseAdmin
-    .from("withdraw_requests")
-    .select("*")
-    .eq("id", id)
-    .single();
+  try {
 
-  if (!withdraw) throw new Error("Withdraw not found");
-  if (withdraw.status !== "pending") throw new Error("Already processed");
+    await rejectWithdrawRequest({
+      withdrawRequestId: id,
+    });
 
-  const { data: wallet } = await supabaseAdmin
-    .from("wallets")
-    .select("*")
-    .eq("seller_id", withdraw.seller_id)
-    .single();
+    revalidatePath(
+      "/dashboard/admin/withdraws"
+    );
 
-  if (!wallet) throw new Error("Wallet not found");
+    revalidatePath(
+      "/dashboard/seller/wallet"
+    );
 
-  await supabaseAdmin
-    .from("wallets")
-    .update({
-      locked_balance: wallet.locked_balance - withdraw.amount,
-    })
-    .eq("seller_id", withdraw.seller_id);
+    return {
+      success: true,
+    };
 
-  await supabaseAdmin.from("wallet_transactions").insert({
-    seller_id: withdraw.seller_id,
-    type: "release",
-    amount: withdraw.amount,
-    reference_id: id,
-    note: "Withdraw rejected",
-  });
+  } catch (error: any) {
 
-  await supabaseAdmin
-    .from("withdraw_requests")
-    .update({ status: "rejected" })
-    .eq("id", id);
+    console.error(
+      "REJECT WITHDRAW ERROR:",
+      error
+    );
+
+    throw new Error(
+      error?.message ||
+      "Failed to reject withdraw"
+    );
+  }
 }
 
 export async function markWithdrawPaid(id: string) {
@@ -386,13 +318,6 @@ export async function markWithdrawPaid(id: string) {
 /* ============================= */
 
 /* ============================= */
-/* 🚚 SHIPPING */
-/* ============================= */
-
-/* ============================= */
-/* 🚚 SHIPPING */
-/* ============================= */
-/* ============================= */
 /* 🚚 CREATE SHIPMENT BY ADMIN */
 /* ============================= */
 const USE_FAKE_SHIPPING =
@@ -401,11 +326,15 @@ const USE_FAKE_SHIPPING =
   "true";
 
 
-export async function createShipmentByAdmin(
+
+/* ============================= */
+/* 🚚 CREATE SHIPMENT FOR ORDER */
+/* AUTO AFTER SELLER ACCEPT */
+/* ============================= */
+
+export async function createShipmentForOrder(
   orderId: string
 ) {
-  await requireAdmin();
-
   try {
     /* ============================= */
     /* 📦 FETCH ORDER */
@@ -432,20 +361,20 @@ export async function createShipmentByAdmin(
     }
 
     /* ============================= */
-    /* 🚫 SELLER ACCEPT CHECK */
+    /* 🚫 VALID STATUS */
     /* ============================= */
 
-   if (
-  order.status !==
-  "accepted"
-) {
+    if (
+      order.status !==
+      "processing"
+    ) {
       throw new Error(
-        "Seller must accept order before shipment"
+        "Order must be processing"
       );
     }
 
     /* ============================= */
-    /* 🚫 PREVENT DUPLICATE */
+    /* 🚫 DUPLICATE SHIPMENT */
     /* ============================= */
 
     if (
@@ -508,7 +437,7 @@ export async function createShipmentByAdmin(
     }
 
     /* ============================= */
-    /* 📦 FETCH ITEMS */
+    /* 📦 FETCH ORDER ITEMS */
     /* ============================= */
 
     const {
@@ -524,7 +453,10 @@ export async function createShipmentByAdmin(
           seller_id
         )
       `)
-      .eq("order_id", orderId);
+      .eq(
+        "order_id",
+        orderId
+      );
 
     if (
       itemsError ||
@@ -536,24 +468,24 @@ export async function createShipmentByAdmin(
     }
 
     /* ============================= */
-    /* 🚫 VALIDATE ITEM STATUS */
+    /* 🚫 VALIDATE ITEMS */
     /* ============================= */
 
-  const invalidItem =
-  items.find(
-    (item: any) =>
-      item.status !==
-      "accepted"
-  );
+    const invalidItem =
+      items.find(
+        (item: any) =>
+          item.status !==
+          "processing"
+      );
 
     if (invalidItem) {
       throw new Error(
-        "Some items are not accepted yet"
+        "Items not processing"
       );
     }
 
     /* ============================= */
-    /* 🏭 GET SELLER */
+    /* 🏭 SELLER */
     /* ============================= */
 
     const sellerId =
@@ -566,7 +498,7 @@ export async function createShipmentByAdmin(
     }
 
     /* ============================= */
-    /* 🏠 FETCH SELLER ADDRESS */
+    /* 🏠 SELLER ADDRESS */
     /* ============================= */
 
     const {
@@ -595,7 +527,7 @@ export async function createShipmentByAdmin(
     }
 
     /* ============================= */
-    /* 📦 PREPARE SHIPMENT ITEMS */
+    /* 📦 SHIPMENT ITEMS */
     /* ============================= */
 
     const shipmentItems =
@@ -612,7 +544,6 @@ export async function createShipmentByAdmin(
           ),
 
           product_name:
-            item.product_name ||
             item.products?.name ||
             "Product",
 
@@ -670,18 +601,14 @@ export async function createShipmentByAdmin(
     );
 
     /* ============================= */
-    /* 🧠 DETERMINE STATUS */
+    /* 🧠 STATUS */
     /* ============================= */
 
-    const now =
-      new Date().toISOString();
-const orderStatus =
-  shipment.awb_code
-    ? "shipped"
-    : "accepted";
+    const orderStatus =
+      "processing";
 
     /* ============================= */
-    /* ✅ UPDATE MAIN ORDER */
+    /* ✅ UPDATE ORDER */
     /* ============================= */
 
     const {
@@ -690,31 +617,22 @@ const orderStatus =
       .from("orders")
       .update({
         shipment_id:
-          shipment.shipment_id ||
-          null,
+          shipment.shipment_id,
 
         awb_code:
-          shipment.awb_code ||
-          null,
+          shipment.awb_code,
 
         courier_name:
-          shipment.courier_name ||
-          "Pending",
+          shipment.courier_name,
 
         tracking_url:
-          shipment.tracking_url ||
+          shipment.tracking_url,
+
+        shipment_error:
           null,
 
         status:
           orderStatus,
-
-        shipped_at:
-          shipment.awb_code
-            ? now
-            : null,
-
-        shipment_error:
-          null,
       })
       .eq("id", orderId);
 
@@ -725,7 +643,7 @@ const orderStatus =
     }
 
     /* ============================= */
-    /* ✅ UPDATE ORDER ITEMS */
+    /* ✅ UPDATE ITEMS */
     /* ============================= */
 
     const {
@@ -736,13 +654,11 @@ const orderStatus =
       .update({
         status:
           orderStatus,
-
-        shipped_at:
-          shipment.awb_code
-            ? now
-            : null,
       })
-      .eq("order_id", orderId);
+      .eq(
+        "order_id",
+        orderId
+      );
 
     if (
       orderItemsError
@@ -753,71 +669,17 @@ const orderStatus =
     }
 
     /* ============================= */
-    /* 🤖 AUTO DEV FLOW */
+    /* 🤖 DEV AUTO FLOW */
     /* ============================= */
 
     if (
       USE_FAKE_SHIPPING
     ) {
-      /* ============================= */
-      /* 🚚 AUTO OFD */
-      /* ============================= */
+     
+   
+   
 
-  setTimeout(async () => {
-  try {
-    const ofdTime =
-      new Date().toISOString();
-
-    await supabaseAdmin
-      .from("orders")
-      .update({
-        status:
-          "out_for_delivery",
-
-        out_for_delivery_at:
-          ofdTime,
-      })
-      .eq("id", orderId);
-
-    await supabaseAdmin
-      .from("order_items")
-      .update({
-        status:
-          "out_for_delivery",
-
-        out_for_delivery_at:
-          ofdTime,
-      })
-      .eq(
-        "order_id",
-        orderId
-      );
-
-    console.log(
-      "AUTO OFD DONE"
-    );
-  } catch (e) {
-    console.error(e);
-  }
-}, 10000);
-
-      /* ============================= */
-      /* ✅ AUTO DELIVER */
-      /* ============================= */
-
-      setTimeout(async () => {
-        try {
-          await deliverOrderInternal(
-            orderId
-          );
-
-          console.log(
-            "AUTO DELIVERY DONE"
-          );
-        } catch (e) {
-          console.error(e);
-        }
-      }, 20000);
+   
     }
 
     /* ============================= */
@@ -879,6 +741,8 @@ const orderStatus =
     );
   }
 }
+
+
 /* ============================= */
 /* 🚚 RETRY COURIER ASSIGN */
 /* ============================= */
@@ -1028,6 +892,7 @@ export async function verifyBankAccount(sellerId: string) {
 async function deliverOrderInternal(
   orderId: string
 ) {
+
   /* ============================= */
   /* 📦 FETCH ORDER */
   /* ============================= */
@@ -1041,9 +906,13 @@ async function deliverOrderInternal(
     .eq("id", orderId)
     .single();
 
-  if (orderError || !order) {
+  if (
+    orderError ||
+    !order
+  ) {
+
     console.error(
-      "DELIVERY ORDER ERROR:",
+      "❌ DELIVERY ORDER ERROR:",
       orderError
     );
 
@@ -1052,14 +921,24 @@ async function deliverOrderInternal(
     );
   }
 
+  console.log(
+    "📦 ORDER FOUND:",
+    order.id
+  );
+
   /* ============================= */
-  /* 🚫 PREVENT DUPLICATE */
+  /* 🚫 PREVENT DUPLICATE DELIVERY */
   /* ============================= */
 
   if (
     order.status ===
     "delivered"
   ) {
+
+    console.log(
+      "⚠️ ORDER ALREADY DELIVERED"
+    );
+
     return {
       success: true,
     };
@@ -1078,8 +957,9 @@ async function deliverOrderInternal(
     .eq("order_id", orderId);
 
   if (itemsError) {
+
     console.error(
-      "ITEMS ERROR:",
+      "❌ ITEMS ERROR:",
       itemsError
     );
 
@@ -1087,6 +967,11 @@ async function deliverOrderInternal(
       "Failed to fetch order items"
     );
   }
+
+  console.log(
+    "📦 ORDER ITEMS:",
+    items?.length || 0
+  );
 
   const now =
     new Date().toISOString();
@@ -1121,8 +1006,9 @@ async function deliverOrderInternal(
     .eq("order_id", orderId);
 
   if (orderItemsError) {
+
     console.error(
-      "ORDER ITEMS UPDATE ERROR:",
+      "❌ ORDER ITEMS UPDATE ERROR:",
       orderItemsError
     );
 
@@ -1130,6 +1016,10 @@ async function deliverOrderInternal(
       "Failed to update order items"
     );
   }
+
+  console.log(
+    "✅ ORDER ITEMS UPDATED"
+  );
 
   /* ============================= */
   /* ✅ UPDATE MAIN ORDER */
@@ -1150,10 +1040,6 @@ async function deliverOrderInternal(
           ? "paid"
           : order.payment_status,
 
-      /* ============================= */
-      /* ⏳ SELLER PAYOUT HOLD */
-      /* ============================= */
-
       payout_release_at:
         payoutReleaseAt,
 
@@ -1162,8 +1048,9 @@ async function deliverOrderInternal(
     .eq("id", orderId);
 
   if (updateOrderError) {
+
     console.error(
-      "ORDER UPDATE ERROR:",
+      "❌ ORDER UPDATE ERROR:",
       updateOrderError
     );
 
@@ -1171,6 +1058,10 @@ async function deliverOrderInternal(
       "Failed to update order"
     );
   }
+
+  console.log(
+    "✅ ORDER UPDATED"
+  );
 
   /* ============================= */
   /* 🚚 UPDATE SHIPMENT */
@@ -1188,11 +1079,96 @@ async function deliverOrderInternal(
     .eq("order_id", orderId);
 
   if (shipmentError) {
+
     console.error(
-      "SHIPMENT UPDATE ERROR:",
+      "⚠️ SHIPMENT UPDATE ERROR:",
       shipmentError
     );
+
+  } else {
+
+    console.log(
+      "✅ SHIPMENT UPDATED"
+    );
   }
+
+ /* ============================= */
+/* 💰 CREATE SELLER SETTLEMENT */
+/* ============================= */
+
+try {
+
+  const sellerPayout =
+    Number(
+      order.seller_payout || 0
+    );
+
+  console.log(
+    "💰 SELLER PAYOUT:",
+    sellerPayout
+  );
+
+  if (
+    sellerPayout > 0 &&
+    order.seller_id
+  ) {
+
+    
+
+    /* ============================= */
+    /* 🧾 CREATE SETTLEMENT */
+    /* ============================= */
+    const existingSettlement =
+  await supabaseAdmin
+    .from("settlements")
+    .select("id")
+    .eq("order_id", orderId)
+    .maybeSingle();
+
+if (existingSettlement.data) {
+  console.log(
+    "⚠️ DELIVERY ALREADY PROCESSED"
+  );
+
+  return {
+    success: true,
+    message:
+      "Settlement already exists",
+  };
+}
+
+    await createSellerSettlement({
+      orderId:
+        order.id,
+
+      sellerId:
+        order.seller_id,
+
+      amount:
+        sellerPayout,
+
+      releaseAt:
+        payoutReleaseAt,
+    });
+
+    console.log(
+      "✅ SELLER SETTLEMENT CREATED"
+    );
+
+  } else {
+
+    console.log(
+      "⚠️ NO SELLER PAYOUT"
+    );
+  }
+
+} catch (settlementError) {
+
+  console.error(
+    "❌ SETTLEMENT ERROR:",
+    settlementError
+  );
+}
 
   /* ============================= */
   /* ♻️ REVALIDATE */
@@ -1219,8 +1195,7 @@ async function deliverOrderInternal(
   );
 
   console.log(
-    "💰 Payout release scheduled for:",
-    payoutReleaseAt
+    "💰 PAYOUT RELEASED"
   );
 
   return {
@@ -1235,9 +1210,9 @@ export async function markOrderDelivered(
 ) {
   await requireAdmin();
 
-  return deliverOrderInternal(
-    orderId
-  );
+  return {
+  success: true,
+};
   /* ============================= */
 /* 🔒 LOCK SELLER AMOUNT */
 /* ============================= */
@@ -1253,14 +1228,17 @@ await supabaseAdmin
 /* 📦 ADMIN ORDER STATUS UPDATE */
 /* ============================= */
 
-export async function updateOrderStatusByAdmin(
+/* ============================= */
+/* 🔒 INTERNAL ORDER UPDATE */
+/* ============================= */
+
+async function updateOrderStatusInternal(
   orderId: string,
   newStatus:
     | "shipped"
     | "out_for_delivery"
     | "delivered"
 ) {
-  await requireAdmin();
 
   const now =
     new Date().toISOString();
@@ -1285,18 +1263,24 @@ export async function updateOrderStatusByAdmin(
       now;
   }
 
- 
-/* ============================= */
-/* 💰 HANDLE DELIVERY */
-/* ============================= */
+  /* ============================= */
+  /* 💰 HANDLE DELIVERY */
+  /* ============================= */
 
-if (
-  newStatus === "delivered"
-) {
-  return await deliverOrderInternal(
-    orderId
-  );
-}
+  if (
+    newStatus === "delivered"
+  ) {
+
+    console.log(
+      "🚚 DELIVERING ORDER:",
+      orderId
+    );
+
+    return await deliverOrderInternal(
+      orderId
+    );
+  }
+
   /* ============================= */
   /* ✅ UPDATE ORDER ITEMS */
   /* ============================= */
@@ -1309,6 +1293,8 @@ if (
     .eq("order_id", orderId);
 
   if (itemsError) {
+    console.error(itemsError);
+
     throw new Error(
       itemsError.message
     );
@@ -1326,16 +1312,12 @@ if (
     .eq("id", orderId);
 
   if (orderError) {
+    console.error(orderError);
+
     throw new Error(
       orderError.message
     );
   }
-
-  /* ============================= */
-  /* 💰 AUTO CREDIT SELLERS */
-  /* ============================= */
-
-
 
   /* ============================= */
   /* ♻️ REVALIDATE */
@@ -1357,40 +1339,85 @@ if (
     success: true,
   };
 }
+
+/* ============================= */
+/* 👮 ADMIN WRAPPER */
+/* ============================= */
+
+export async function updateOrderStatusByAdmin(
+  orderId: string,
+  newStatus:
+    | "shipped"
+    | "out_for_delivery"
+    | "delivered"
+) {
+
+  await requireAdmin();
+
+  return await updateOrderStatusInternal(
+    orderId,
+    newStatus
+  );
+}
 /* ============================= */
 /* 💸 SELLER PAYMENT */
 /* ============================= */
+
+
 export async function markSellerPaid(
-    orderId: string
+  orderId: string
 ) {
   await requireAdmin();
 
   /* ============================= */
-  /* 📦 GET ORDER */
+  /* 📦 FETCH ORDER */
   /* ============================= */
 
-  const { data: order, error } =
-    await supabaseAdmin
-      .from("orders")
-      .select("*")
-      .eq("id", orderId)
-      .single();
+  const {
+    data: order,
+    error,
+  } = await supabaseAdmin
+    .from("orders")
+    .select(`
+      *,
+      settlements (
+        id,
+        status,
+        amount,
+        release_date
+      )
+    `)
+    .eq("id", orderId)
+    .single();
 
   if (error || !order) {
-    throw new Error("Order not found");
+    console.error(
+      "❌ ORDER FETCH ERROR:",
+      error
+    );
+
+    throw new Error(
+      "Order not found"
+    );
   }
 
   /* ============================= */
   /* 🔐 VALIDATIONS */
   /* ============================= */
 
-  if (order.payment_status !== "paid") {
+  if (
+    order.payment_status !==
+    "paid"
+  ) {
     throw new Error(
-      "Order not paid"
+      "Order payment pending"
     );
   }
 
-  if (order.status !== "delivered") {
+  if (
+    order.status !==
+    "delivered"
+  ) {
     throw new Error(
       "Order not delivered"
     );
@@ -1402,59 +1429,103 @@ export async function markSellerPaid(
     );
   }
 
-  const amount = Number(
-    order.seller_payout || 0
+  if (!order.seller_id) {
+    throw new Error(
+      "Seller not found"
+    );
+  }
+
+  /* ============================= */
+  /* 📦 FETCH SETTLEMENT */
+  /* ============================= */
+
+  const {
+    data: settlement,
+    error: settlementError,
+  } = await supabaseAdmin
+    .from("settlements")
+    .select("*")
+    .eq("order_id", order.id)
+    .maybeSingle();
+
+  if (
+    settlementError ||
+    !settlement
+  ) {
+    console.error(
+      "❌ SETTLEMENT ERROR:",
+      settlementError
+    );
+
+    throw new Error(
+      "Settlement not found"
+    );
+  }
+
+  /* ============================= */
+  /* 🚫 ALREADY RELEASED */
+  /* ============================= */
+
+  if (
+    settlement.status ===
+    "released"
+  ) {
+    throw new Error(
+      "Settlement already released"
+    );
+  }
+
+  /* ============================= */
+  /* ⏳ HOLD WINDOW CHECK */
+  /* ============================= */
+
+  if (
+    settlement.release_date &&
+    new Date(
+      settlement.release_date
+    ) > new Date()
+  ) {
+    throw new Error(
+      "Settlement hold period active"
+    );
+  }
+
+  /* ============================= */
+  /* 💰 RELEASE SETTLEMENT */
+  /* ============================= */
+
+  await releaseSellerSettlement(
+    settlement.id
   );
 
-  if (!amount || amount <= 0) {
-    throw new Error(
-      "Invalid seller payout"
-    );
-  }
-
   /* ============================= */
-  /* 🔓 RELEASE WALLET BALANCE */
+  /* ♻️ REVALIDATE */
   /* ============================= */
 
-  await releaseWalletBalance({
-    sellerId: order.seller_id,
+  revalidatePath(
+    "/dashboard/admin/orders"
+  );
 
-    orderId: order.id,
+  revalidatePath(
+    "/dashboard/admin/settlements"
+  );
 
-    amount,
-  });
+  revalidatePath(
+    "/dashboard/seller/orders"
+  );
 
-  /* ============================= */
-  /* ✅ UPDATE ORDER */
-  /* ============================= */
-
-  const { error: updateError } =
-    await supabaseAdmin
-      .from("orders")
-      .update({
-        seller_paid: true,
-
-        seller_paid_at:
-          new Date().toISOString(),
-      })
-      .eq("id", orderId);
-
-  if (updateError) {
-    console.error(updateError);
-
-    throw new Error(
-      "Failed to update order"
-    );
-  }
+  revalidatePath(
+    "/dashboard/seller/wallet"
+  );
 
   console.log(
-    "✅ Seller payment released"
+    "✅ SELLER PAYMENT RELEASED:",
+    order.id
   );
 
   return {
     success: true,
   };
-
 }
 
 
@@ -1490,4 +1561,88 @@ export async function markRefundProcessed(
   }
 
   revalidatePath("/dashboard/admin/returns");
+}
+
+
+// approveSellerVerification()
+// rejectSellerVerification()
+
+/* ============================= */
+/* ✅ APPROVE SELLER */
+/* ============================= */
+
+export async function approveSellerVerification(
+  sellerId: string
+) {
+  await requireAdmin();
+
+  await supabaseAdmin
+    .from("seller_documents")
+    .update({
+      verification_status:
+        "approved",
+
+      verified_at:
+        new Date().toISOString(),
+    })
+    .eq(
+      "seller_id",
+      sellerId
+    );
+
+  await supabaseAdmin
+    .from("users")
+    .update({
+      seller_verified: true,
+    })
+    .eq("id", sellerId);
+
+  revalidatePath(
+    "/dashboard/admin/seller-verification"
+  );
+
+  return {
+    success: true,
+  };
+}
+/* ============================= */
+/* ❌ REJECT SELLER */
+/* ============================= */
+
+export async function rejectSellerVerification(
+  sellerId: string,
+  reason: string
+) {
+  await requireAdmin();
+
+  await supabaseAdmin
+    .from("seller_documents")
+    .update({
+      verification_status:
+        "rejected",
+
+      rejection_reason:
+        reason,
+
+      verified_at: null,
+    })
+    .eq(
+      "seller_id",
+      sellerId
+    );
+
+  await supabaseAdmin
+    .from("users")
+    .update({
+      seller_verified: false,
+    })
+    .eq("id", sellerId);
+
+  revalidatePath(
+    "/dashboard/admin/seller-verification"
+  );
+
+  return {
+    success: true,
+  };
 }

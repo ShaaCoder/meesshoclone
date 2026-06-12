@@ -3,24 +3,34 @@
 import crypto from "crypto";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
+
 import { getSupabaseServer } from "@/lib/supabase-server";
 
-import { createShipment } from "@/services/shiprocket";
+import {
+  calculateCommission,
+} from "@/services/commission-engine";
 
 /* =======================================================
    🧠 TYPES
 ======================================================= */
 
 type OrderInput = {
-  paymentMethod: "cod" | "online";
+  paymentMethod:
+    | "cod"
+    | "online";
 
   addressId?: string;
 
   name?: string;
+
   phone?: string;
+
   address?: string;
+
   city?: string;
+
   state?: string;
+
   pincode?: string;
 };
 
@@ -33,9 +43,13 @@ type OrderItemType = {
 
   quantity: number;
 
-  price: number;
-
   cost_price: number;
+
+  selling_price: number;
+
+  seller_profit: number;
+
+  platform_margin: number;
 
   gst_percent: number;
 
@@ -46,28 +60,30 @@ type OrderItemType = {
   product_name: string;
 };
 
-type ShipmentResponse = {
-  shipment_id?: string;
-
-  awb_code?: string;
-
-  courier_name?: string;
-
-  tracking_url?: string;
-};
-
 /* =======================================================
    🔐 FRAUD CHECK
 ======================================================= */
 
-function isSuspiciousOrder(data: OrderInput) {
-  const phone = String(data.phone || "");
+function isSuspiciousOrder(
+  data: OrderInput
+) {
+  const phone = String(
+    data.phone || ""
+  );
 
-  const name = String(data.name || "");
+  const name = String(
+    data.name || ""
+  );
 
-  const address = String(data.address || "");
+  const address = String(
+    data.address || ""
+  );
 
-  if (!/^[6-9]\d{9}$/.test(phone)) {
+  if (
+    !/^[6-9]\d{9}$/.test(
+      phone
+    )
+  ) {
     return true;
   }
 
@@ -83,42 +99,49 @@ function isSuspiciousOrder(data: OrderInput) {
 }
 
 /* =======================================================
-   🛡️ COD ELIGIBILITY
+   🛡️ COD CHECK
 ======================================================= */
 
 async function checkCODEligibility(
   userId: string,
   supabase: any
 ) {
-  const { data: user } = await supabase
-    .from("users")
-    .select(`
-      cod_orders_count,
-      rto_count,
-      is_cod_blocked
-    `)
-    .eq("id", userId)
-    .single();
+  const { data: user } =
+    await supabase
+      .from("users")
+      .select(`
+        cod_orders_count,
+        rto_count,
+        is_cod_blocked
+      `)
+      .eq("id", userId)
+      .single();
 
   if (!user) {
-    return { allowed: false };
+    return {
+      allowed: false,
+    };
   }
 
   if (user.is_cod_blocked) {
-    return { allowed: false };
-  }
-
-  if (Number(user.rto_count || 0) >= 3) {
-    return { allowed: false };
+    return {
+      allowed: false,
+    };
   }
 
   if (
-    Number(user.cod_orders_count || 0) >= 5
+    Number(
+      user.rto_count || 0
+    ) >= 3
   ) {
-    return { allowed: false };
+    return {
+      allowed: false,
+    };
   }
 
-  return { allowed: true };
+  return {
+    allowed: true,
+  };
 }
 
 /* =======================================================
@@ -128,8 +151,7 @@ async function checkCODEligibility(
 function generateOrderCode() {
   return (
     "ORD-" +
-    crypto
-      .randomUUID()
+    crypto.randomUUID()
       .slice(0, 8)
       .toUpperCase()
   );
@@ -147,7 +169,8 @@ export async function placeOrder(
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } =
+    await supabase.auth.getUser();
 
   if (!user) {
     throw new Error(
@@ -163,6 +186,7 @@ export async function placeOrder(
     data.addressId;
 
   if (!addressId) {
+
     const payload = {
       user_id: user.id,
 
@@ -204,10 +228,6 @@ export async function placeOrder(
       );
     }
 
-    /* =======================================================
-       🚨 COD FRAUD CHECK
-    ======================================================= */
-
     if (
       data.paymentMethod ===
         "cod" &&
@@ -242,7 +262,9 @@ export async function placeOrder(
       addressError ||
       !insertedAddress
     ) {
+
       console.error(
+        "ADDRESS ERROR:",
         addressError
       );
 
@@ -256,13 +278,14 @@ export async function placeOrder(
   }
 
   /* =======================================================
-     🛡️ COD CHECK
+     🛡️ COD ELIGIBILITY
   ======================================================= */
 
   if (
     data.paymentMethod ===
     "cod"
   ) {
+
     const codCheck =
       await checkCODEligibility(
         user.id,
@@ -286,6 +309,7 @@ export async function placeOrder(
   } = await supabaseAdmin
     .from("cart")
     .select(`
+      id,
       quantity,
       product_id,
       variant_id,
@@ -293,12 +317,19 @@ export async function placeOrder(
       products:product_id (
         id,
         name,
+        slug,
         seller_id,
         status,
         approval_status,
 
         categories (
           gst_percent
+        ),
+
+        product_images (
+          url,
+          color,
+          is_primary
         )
       ),
 
@@ -306,15 +337,27 @@ export async function placeOrder(
         id,
         stock,
         reserved_stock,
+
         cost_price,
         selling_price,
-        platform_margin
+        seller_profit,
+        platform_margin,
+
+        mrp,
+        size,
+        color,
+        attributes
       )
     `)
-    .eq("user_id", user.id);
+    .eq(
+      "user_id",
+      user.id
+    );
 
   if (cartError) {
+
     console.error(
+      "CART ERROR:",
       cartError
     );
 
@@ -330,21 +373,32 @@ export async function placeOrder(
   }
 
   /* =======================================================
-     🧠 CALCULATIONS
+     🧠 TOTALS
   ======================================================= */
 
-  let total = 0;
+  let subtotal = 0;
+
+  let gstTotal = 0;
+
+  let shippingTotal = 0;
+
+  let totalAmount = 0;
 
   let sellerPayout = 0;
 
   let platformProfit = 0;
 
-  let isRisky = false;
+  let totalCommission = 0;
 
   const items: OrderItemType[] =
     [];
 
+  /* =======================================================
+     🛒 PROCESS ITEMS
+  ======================================================= */
+
   for (const cartItem of cart) {
+
     const product =
       Array.isArray(
         cartItem.products
@@ -366,6 +420,10 @@ export async function placeOrder(
       );
     }
 
+    /* =======================================================
+       ✅ PRODUCT VALIDATION
+    ======================================================= */
+
     if (
       product.status !==
         "active" ||
@@ -376,6 +434,10 @@ export async function placeOrder(
         `${product.name} unavailable`
       );
     }
+
+    /* =======================================================
+       ✅ VARIANT VALIDATION
+    ======================================================= */
 
     if (!variant) {
       throw new Error(
@@ -403,23 +465,9 @@ export async function placeOrder(
       );
     }
 
-    const sellingPrice =
-      Number(
-        variant.selling_price ||
-          0
-      ) ||
-      Number(
-        variant.cost_price || 0
-      ) +
-        Number(
-          variant.platform_margin ||
-            0
-        );
-
-    const costPrice =
-      Number(
-        variant.cost_price || 0
-      );
+    /* =======================================================
+       CATEGORY
+    ======================================================= */
 
     const category =
       Array.isArray(
@@ -431,41 +479,106 @@ export async function placeOrder(
     const gstPercent =
       Number(
         category?.gst_percent ||
-          18
+          5
       );
+
+    /* =======================================================
+       PRICING
+    ======================================================= */
+
+    const quantity = Number(
+      cartItem.quantity || 1
+    );
+
+    const costPrice =
+      Number(
+        variant.cost_price || 0
+      );
+
+    const sellingPrice =
+      Number(
+        variant.selling_price ||
+          0
+      );
+
+    const sellerProfit =
+      Number(
+        variant.seller_profit ||
+          0
+      );
+
+    const platformMargin =
+      Number(
+        variant.platform_margin ||
+          0
+      );
+
+    /* =======================================================
+       GST
+    ======================================================= */
 
     const gstAmount =
       Math.round(
-        ((sellingPrice *
-          gstPercent) /
-          100) *
-          Number(
-            cartItem.quantity
-          )
+        (sellingPrice *
+          gstPercent) / 100
       );
 
     const shippingFee = 0;
 
-    total +=
-      sellingPrice *
-        Number(
-          cartItem.quantity
-        ) +
+    const finalPrice =
+      sellingPrice +
       gstAmount +
       shippingFee;
 
+    /* =======================================================
+       TOTALS
+    ======================================================= */
+
+    subtotal +=
+      sellingPrice *
+      quantity;
+
+    gstTotal +=
+      gstAmount *
+      quantity;
+
+    shippingTotal +=
+      shippingFee *
+      quantity;
+
+    totalAmount +=
+      finalPrice *
+      quantity;
+
     sellerPayout +=
-      costPrice *
-      Number(
-        cartItem.quantity
-      );
+      (costPrice +
+        sellerProfit) *
+      quantity;
 
     platformProfit +=
-      (sellingPrice -
-        costPrice) *
-      Number(
-        cartItem.quantity
-      );
+      platformMargin *
+      quantity;
+
+    /* =======================================================
+       COMMISSION
+    ======================================================= */
+
+    const commission =
+      calculateCommission({
+        category: "other",
+
+        productPrice:
+          sellingPrice,
+
+        quantity,
+      });
+
+    totalCommission +=
+      commission.totalCommission;
+
+    /* =======================================================
+       ITEMS
+    ======================================================= */
 
     items.push({
       product_id:
@@ -477,14 +590,19 @@ export async function placeOrder(
       seller_id:
         product.seller_id,
 
-      quantity: Number(
-        cartItem.quantity
-      ),
-
-      price: sellingPrice,
+      quantity,
 
       cost_price:
         costPrice,
+
+      selling_price:
+        sellingPrice,
+
+      seller_profit:
+        sellerProfit,
+
+      platform_margin:
+        platformMargin,
 
       gst_percent:
         gstPercent,
@@ -501,7 +619,7 @@ export async function placeOrder(
   }
 
   /* =======================================================
-     🏪 SINGLE SELLER CHECK
+     SINGLE SELLER
   ======================================================= */
 
   const uniqueSellers = [
@@ -530,13 +648,24 @@ export async function placeOrder(
     );
   }
 
+/* =======================================================
+   ORDER STATUS
+======================================================= */
+
+const orderStatus =
+  "placed";
+
+const paymentStatus =
+  data.paymentMethod ===
+  "online"
+    ? "pending"
+    : "pending";
   /* =======================================================
-     🧾 CREATE ORDER
+     CREATE ORDER
   ======================================================= */
 
   const orderCode =
     generateOrderCode();
-const initialStatus = "placed";
 
   const {
     data: order,
@@ -557,7 +686,19 @@ const initialStatus = "placed";
         addressId,
 
       total_amount:
-        Math.round(total),
+        Math.round(
+          totalAmount
+        ),
+
+      shipping_amount:
+        Math.round(
+          shippingTotal
+        ),
+
+      gst_amount:
+        Math.round(
+          gstTotal
+        ),
 
       seller_payout:
         Math.round(
@@ -569,21 +710,25 @@ const initialStatus = "placed";
           platformProfit
         ),
 
+      commission_amount:
+        Math.round(
+          totalCommission
+        ),
+
       payment_method:
         data.paymentMethod,
 
       payment_status:
-        "unpaid",
+        paymentStatus,
 
       status:
-        initialStatus,
+        orderStatus,
 
       is_cod:
         data.paymentMethod ===
         "cod",
 
-      is_risky:
-        isRisky,
+      is_risky: false,
     })
     .select()
     .single();
@@ -592,7 +737,9 @@ const initialStatus = "placed";
     orderError ||
     !order
   ) {
+
     console.error(
+      "ORDER ERROR:",
       orderError
     );
 
@@ -602,7 +749,7 @@ const initialStatus = "placed";
   }
 
   /* =======================================================
-     📦 INSERT ORDER ITEMS
+     INSERT ORDER ITEMS
   ======================================================= */
 
   const {
@@ -629,14 +776,16 @@ const initialStatus = "placed";
           item.cost_price,
 
         final_price:
-          item.price,
+          item.selling_price +
+          item.gst_amount +
+          item.shipping_fee,
+
+        seller_earning:
+          item.cost_price +
+          item.seller_profit,
 
         platform_fee:
-          Math.max(
-            item.price -
-              item.cost_price,
-            0
-          ),
+          item.platform_margin,
 
         shipping_fee:
           item.shipping_fee,
@@ -651,20 +800,18 @@ const initialStatus = "placed";
           item.product_name,
 
         status:
-          initialStatus,
+          orderStatus,
       }))
     );
 
   if (
     orderItemsError
   ) {
+
     console.error(
+      "ORDER ITEMS ERROR:",
       orderItemsError
     );
-
-    /* =======================================================
-       ❌ ROLLBACK
-    ======================================================= */
 
     await supabaseAdmin
       .from("orders")
@@ -677,66 +824,36 @@ const initialStatus = "placed";
   }
 
   /* =======================================================
-     🔒 RESERVE STOCK
+     STOCK RESERVE
   ======================================================= */
 
-  for (const item of items) {
-    const {
-      data: variant,
-    } =
-      await supabaseAdmin
-        .from(
-          "product_variants"
-        )
-        .select(`
-          stock,
-          reserved_stock
-        `)
-        .eq(
-          "id",
-          item.variant_id
-        )
-        .single();
+  if (
+    data.paymentMethod ===
+    "cod"
+  ) {
 
-    if (!variant) {
-      throw new Error(
-        "Variant not found"
-      );
-    }
+    for (const item of items) {
 
-    const availableStock =
-      Number(
-        variant.stock || 0
-      ) -
-      Number(
-        variant.reserved_stock ||
-          0
-      );
+      const {
+        data: variant,
+      } =
+        await supabaseAdmin
+          .from(
+            "product_variants"
+          )
+          .select(`
+            reserved_stock
+          `)
+          .eq(
+            "id",
+            item.variant_id
+          )
+          .single();
 
-    if (
-      availableStock <
-      item.quantity
-    ) {
-      /* =======================================================
-         ❌ ROLLBACK
-      ======================================================= */
+      if (!variant) {
+        continue;
+      }
 
-      await supabaseAdmin
-        .from("orders")
-        .delete()
-        .eq(
-          "id",
-          order.id
-        );
-
-      throw new Error(
-        "Insufficient stock"
-      );
-    }
-
-    const {
-      error: stockError,
-    } =
       await supabaseAdmin
         .from(
           "product_variants"
@@ -746,33 +863,24 @@ const initialStatus = "placed";
             Number(
               variant.reserved_stock ||
                 0
-            ) +
-            item.quantity,
+            ) + item.quantity,
         })
         .eq(
           "id",
           item.variant_id
         );
-
-    if (stockError) {
-      console.error(
-        stockError
-      );
-
-      throw new Error(
-        "Failed to reserve stock"
-      );
     }
   }
 
   /* =======================================================
-     📈 COD COUNT
+     COD COUNT
   ======================================================= */
 
   if (
     data.paymentMethod ===
     "cod"
   ) {
+
     const {
       data: userData,
     } =
@@ -781,10 +889,7 @@ const initialStatus = "placed";
         .select(
           "cod_orders_count"
         )
-        .eq(
-          "id",
-          user.id
-        )
+        .eq("id", user.id)
         .single();
 
     await supabaseAdmin
@@ -800,398 +905,54 @@ const initialStatus = "placed";
   }
 
   /* =======================================================
-     🧹 CLEAR CART
+     CLEAR CART
   ======================================================= */
 
-  await supabase
-    .from("cart")
-    .delete()
-    .eq("user_id", user.id);
+  if (
+    data.paymentMethod ===
+    "cod"
+  ) {
 
-  /* =======================================================
-     ✅ RESPONSE
-  ======================================================= */
-
-  return {
-    success: true,
-
-    orderId:
-      order.id,
-
-    orderCode:
-      order.order_code,
-  };
-}
-
-/* =======================================================
-   🚚 CREATE SHIPMENT
-======================================================= */
-
-export async function createOrderShipment(
-  orderId: string
-) {
-  const {
-    data: order,
-    error,
-  } = await supabaseAdmin
-    .from("orders")
-    .select(`
-      *,
-      addresses (*),
-
-      order_items (
-        *,
-        products (
-          id,
-          name
-        )
-      )
-    `)
-    .eq("id", orderId)
-    .single();
-
-  if (error || !order) {
-    throw new Error(
-      "Order not found"
-    );
-  }
-
-  /* =======================================================
-     🚫 DUPLICATE CHECK
-  ======================================================= */
-
-  const {
-    data: existingShipment,
-  } = await supabaseAdmin
-  .from("order_items")
-  .update({
-    status: "shipped",
-
-    shipped_at:
-      new Date().toISOString(),
-  })
-  .eq("order_id", orderId);
-    
-
-  if (existingShipment) {
-    throw new Error(
-      "Shipment already exists"
-    );
-  }
-
-  /* =======================================================
-     🚚 CREATE SHIPMENT
-  ======================================================= */
-
-  const shipment: ShipmentResponse =
-    await createShipment({
-      ...order,
-
-      shipping_address: {
-        name:
-          order.addresses?.name,
-
-        phone:
-          order.addresses?.phone,
-
-        address:
-          order.addresses
-            ?.address_line,
-
-        city:
-          order.addresses?.city,
-
-        state:
-          order.addresses?.state,
-
-        pincode:
-          order.addresses
-            ?.pincode,
-      },
-
-      items:
-        order.order_items?.map(
-          (item: any) => ({
-            name:
-              item.products
-                ?.name ||
-              "Product",
-
-            quantity:
-              item.quantity,
-
-            price:
-              item.final_price,
-          })
-        ),
-    });
-
-  if (!shipment) {
-    throw new Error(
-      "Shipment creation failed"
-    );
-  }
-
-  /* =======================================================
-     💾 SAVE SHIPMENT
-  ======================================================= */
-await supabaseAdmin
-  .from("shipments")
-  .insert({
-    order_id: orderId,
-
-    awb_code:
-      shipment.awb_code ||
-      null,
-
-    courier_name:
-      shipment.courier_name ||
-      "Shiprocket",
-
-    tracking_url:
-      shipment.tracking_url ||
-      null,
-
-    status: "shipped",
-
-    shipped_at:
-      new Date().toISOString(),
-  });
-
-
-  await supabaseAdmin
-  .from("order_items")
-  .update({
-    status: "shipped",
-
-    shipped_at:
-      new Date().toISOString(),
-  })
-  .eq("order_id", orderId);
-
-  /* =======================================================
-     📦 UPDATE ORDER
-  ======================================================= */
-
-  await supabaseAdmin
-    .from("orders")
-    .update({
-      shipment_id:
-        shipment.shipment_id ||
-        null,
-
-      awb_code:
-        shipment.awb_code ||
-        null,
-
-      courier_name:
-        shipment.courier_name ||
-        "Shiprocket",
-
-      tracking_url:
-        shipment.tracking_url ||
-        null,
-
-      status: "shipped",
-    })
-    .eq("id", orderId);
-
-  return {
-    success: true,
-
-    shipment,
-  };
-}
-
-/* =======================================================
-   ✅ MARK ORDER DELIVERED
-======================================================= */
-
-export async function markOrderDelivered(
-  orderId: string
-) {
-  /* =======================================================
-     📦 FETCH ORDER
-  ======================================================= */
-
-  const { data: order } =
-    await supabaseAdmin
-      .from("orders")
-      .select("*")
-      .eq("id", orderId)
-      .single();
-
-  if (!order) {
-    throw new Error(
-      "Order not found"
-    );
-  }
-
-  /* =======================================================
-     📦 FETCH ITEMS
-  ======================================================= */
-
-  const { data: items } =
-    await supabaseAdmin
-      .from("order_items")
-      .select("*")
-      .eq("order_id", orderId);
-
-  /* =======================================================
-     📦 UPDATE STOCK
-  ======================================================= */
-
-  for (const item of items || []) {
-
-    const { data: variant } =
-      await supabaseAdmin
-        .from(
-          "product_variants"
-        )
-        .select(`
-          stock,
-          reserved_stock
-        `)
-        .eq(
-          "id",
-          item.variant_id
-        )
-        .single();
-
-    if (!variant) {
-      continue;
-    }
-
-    await supabaseAdmin
-      .from(
-        "product_variants"
-      )
-      .update({
-        stock: Math.max(
-          Number(
-            variant.stock || 0
-          ) - item.quantity,
-          0
-        ),
-
-        reserved_stock:
-          Math.max(
-            Number(
-              variant.reserved_stock ||
-                0
-            ) - item.quantity,
-            0
-          ),
-      })
+    await supabase
+      .from("cart")
+      .delete()
       .eq(
-        "id",
-        item.variant_id
+        "user_id",
+        user.id
       );
   }
 
   /* =======================================================
-     📅 DELIVERY DATE
+     RESPONSE
   ======================================================= */
-
-  const deliveredAt =
-    new Date();
-
-  /* =======================================================
-     🛡️ RETURN WINDOW
-  ======================================================= */
-
-  const returnDeadline =
-    new Date();
-
-  returnDeadline.setDate(
-    returnDeadline.getDate() + 7
-  );
-
-  /* =======================================================
-     💰 PAYOUT RELEASE DATE
-  ======================================================= */
-
-  const payoutReleaseDate =
-    new Date();
-
-  payoutReleaseDate.setDate(
-    payoutReleaseDate.getDate() + 7
-  );
-
-  /* =======================================================
-     ✅ UPDATE ORDER
-  ======================================================= */
-
-  const updatePayload: any = {
-    status: "delivered",
-
-    delivered_at:
-      deliveredAt.toISOString(),
-
-    return_deadline:
-      returnDeadline.toISOString(),
-
-    payout_release_at:
-      payoutReleaseDate.toISOString(),
-
-    seller_paid: false,
-  };
-
-  /* =======================================================
-     💵 COD AUTO PAID
-  ======================================================= */
-
-  if (
-    order.payment_method ===
-    "cod"
-  ) {
-    updatePayload.payment_status =
-      "paid";
-  }
-
-  await supabaseAdmin
-    .from("orders")
-    .update(updatePayload)
-    .eq("id", orderId);
-
-  /* =======================================================
-     📦 UPDATE ORDER ITEMS
-  ======================================================= */
-
-  await supabaseAdmin
-    .from("order_items")
-    .update({
-      status: "delivered",
-
-      delivered_at:
-        deliveredAt.toISOString(),
-    })
-    .eq("order_id", orderId);
-
-  /* =======================================================
-     🚚 UPDATE SHIPMENT
-  ======================================================= */
-
-  await supabaseAdmin
-    .from("shipments")
-    .update({
-      status: "delivered",
-
-      delivered_at:
-        deliveredAt.toISOString(),
-    })
-    .eq("order_id", orderId);
-
-  /* =======================================================
-     🔄 SYNC ORDER STATUS
-  ======================================================= */
-
-  await syncMainOrderStatus(
-    orderId
-  );
 
   return {
     success: true,
+
+    orderId: order.id,
+
+    orderCode:
+      order.order_code,
+
+    totalAmount:
+      Math.round(
+        totalAmount
+      ),
+
+    subtotal:
+      Math.round(
+        subtotal
+      ),
+
+    gstTotal:
+      Math.round(
+        gstTotal
+      ),
+
+    shippingTotal:
+      Math.round(
+        shippingTotal
+      ),
   };
 }
 

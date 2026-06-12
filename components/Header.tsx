@@ -118,7 +118,7 @@ useEffect(() => {
       
       {/* LOGO */}
       <Link href="/" className="text-xl font-bold text-blue-600">
-        ShopSphere
+        YourShop
       </Link>
 
       {/* SEARCH */}

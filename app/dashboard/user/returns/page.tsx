@@ -47,49 +47,55 @@ export default async function ReturnsPage() {
   /* ============================= */
 
   const { data: returns } =
-    await supabaseAdmin
-      .from("returns")
-      .select(`
-        *,
+  await supabaseAdmin
+    .from("returns")
+    .select(`
+      *,
 
-        order_items (
-          id,
-          quantity,
-          final_price,
-          product_name,
+      order_items (
+        id,
+        quantity,
+        final_price,
+        product_name,
 
-          products (
-            slug,
-
-            product_images (
-              url,
-              is_primary
-            )
-          )
+        product_variants (
+          color,
+          size
         ),
 
-        orders (
-          order_code,
-          payment_method
-        ),
+        products (
+          slug,
 
-        users!returns_customer_id_fkey (
-          id,
-          name,
-
-          customer_refund_accounts (
-            id,
-            upi_id,
-            bank_name,
-            account_number,
-            is_default
+          product_images (
+            url,
+            color,
+            is_primary
           )
         )
-      `)
-      .eq("customer_id", user.id)
-      .order("created_at", {
-        ascending: false,
-      });
+      ),
+
+      orders (
+        order_code,
+        payment_method
+      ),
+
+      users!returns_customer_id_fkey (
+        id,
+        name,
+
+        customer_refund_accounts (
+          id,
+          upi_id,
+          bank_name,
+          account_number,
+          is_default
+        )
+      )
+    `)
+    .eq("customer_id", user.id)
+    .order("created_at", {
+      ascending: false,
+    });
 
   /* ============================= */
   /* STATS */
@@ -333,7 +339,74 @@ export default async function ReturnsPage() {
         "Marketplace team is reviewing your request.",
     };
   };
+function getVariantImage(
+  item: any
+) {
 
+  const variantColor =
+    item.order_items
+      ?.product_variants
+      ?.color;
+
+  const images =
+    item.order_items
+      ?.products
+      ?.product_images || [];
+
+  /* ============================= */
+  /* 🎨 COLOR MATCH */
+  /* ============================= */
+
+  if (variantColor) {
+
+    const matched =
+      images.find(
+        (img: any) => {
+
+          if (!img?.color) {
+            return false;
+          }
+
+          return (
+            String(
+              img.color
+            ).toLowerCase() ===
+            String(
+              variantColor
+            ).toLowerCase()
+          );
+        }
+      );
+
+    if (matched?.url) {
+      return matched.url;
+    }
+  }
+
+  /* ============================= */
+  /* ⭐ PRIMARY */
+  /* ============================= */
+
+  const primary =
+    images.find(
+      (img: any) =>
+        img.is_primary
+    );
+
+  if (primary?.url) {
+    return primary.url;
+  }
+
+  /* ============================= */
+  /* 📦 FIRST */
+  /* ============================= */
+
+  if (images?.[0]?.url) {
+    return images[0].url;
+  }
+
+  return "/placeholder.png";
+}
   return (
     <div className="max-w-7xl mx-auto p-5 md:p-8 space-y-8">
 
@@ -584,11 +657,15 @@ export default async function ReturnsPage() {
 
                         <div className="relative shrink-0">
 
-                          <img
-                            src={image}
-                            alt=""
-                            className="w-40 h-40 rounded-[28px] object-cover border border-zinc-200 dark:border-zinc-800"
-                          />
+  <img
+  src={getVariantImage(item)}
+  alt={
+    item.order_items
+      ?.product_name ||
+    "Product"
+  }
+  className="w-32 h-32 rounded-3xl object-cover"
+/>
 
                           <div className="absolute top-3 left-3 px-3 py-1 rounded-full bg-black/70 backdrop-blur text-white text-xs font-semibold">
 

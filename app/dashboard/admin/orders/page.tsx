@@ -2,37 +2,33 @@
 
 import { redirect } from "next/navigation";
 
-import { getSupabaseServer } from "@/lib/supabase-server";
+import { format } from "date-fns";
 
+import {
+  CheckCircle2,
+  Clock3,
+  IndianRupee,
+  Package,
+  ShoppingBag,
+  Truck,
+  Wallet,
+  XCircle,
+} from "lucide-react";
+
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 import {
   markSellerPaid,
-  createShipmentByAdmin,
-  retryCourierAssign,
   updateOrderStatusByAdmin,
 } from "@/app/actions/admin";
-
-import { format } from "date-fns";
-
-import {
-  ShoppingBag,
-  IndianRupee,
-  Package,
-  Truck,
-  CheckCircle2,
-  Clock3,
-  Wallet,
-  AlertTriangle,
-  XCircle,
-} from "lucide-react";
 
 export default async function OrdersPage() {
   const supabase =
     await getSupabaseServer();
 
   /* ============================= */
-  /* 🔐 ADMIN CHECK */
+  /* 🔐 ADMIN AUTH */
   /* ============================= */
 
   const {
@@ -95,10 +91,13 @@ export default async function OrdersPage() {
     await supabaseAdmin
       .from("order_items")
       .select(`
+        id,
         order_id,
         quantity,
         final_price,
         cost_price,
+        seller_earning,
+        platform_profit,
         status,
 
         products (
@@ -143,40 +142,23 @@ export default async function OrdersPage() {
 
   let profit = 0;
 
-  (
-    orders || []
-  ).forEach((order: any) => {
-    if (
-      order.payment_status ===
-      "paid"
-    ) {
-      revenue += Number(
-        order.total_amount ||
-          0
-      );
+  (orders || []).forEach(
+    (order: any) => {
+      if (
+        order.payment_status ===
+        "paid"
+      ) {
+        revenue += Number(
+          order.total_amount || 0
+        );
 
-      const orderItems =
-        map[order.id] || [];
-
-      orderItems.forEach(
-        (item: any) => {
-          profit +=
-            (Number(
-              item.final_price ||
-                0
-            ) -
-              Number(
-                item.cost_price ||
-                  0
-              )) *
-            Number(
-              item.quantity ||
-                0
-            );
-        }
-      );
+        profit += Number(
+          order.platform_profit ||
+            0
+        );
+      }
     }
-  });
+  );
 
   const paidOrders =
     orders?.filter(
@@ -246,13 +228,11 @@ export default async function OrdersPage() {
 
       <div>
         <h1 className="text-4xl font-black text-white">
-          Orders
-          Management
+          Orders Management
         </h1>
 
         <p className="text-zinc-500 mt-2">
-          Manage
-          shipments,
+          Manage shipments,
           payouts and
           deliveries
         </p>
@@ -264,32 +244,35 @@ export default async function OrdersPage() {
         <Stat
           title="Total Orders"
           value={
-            orders?.length ||
-            0
+            orders?.length || 0
           }
           icon={ShoppingBag}
         />
 
         <Stat
           title="Revenue"
-          value={`₹${revenue}`}
-          icon={
-            IndianRupee
-          }
+          value={`₹${Number(
+            revenue
+          ).toLocaleString(
+            "en-IN"
+          )}`}
+          icon={IndianRupee}
         />
 
         <Stat
           title="Profit"
-          value={`₹${profit}`}
+          value={`₹${Number(
+            profit
+          ).toLocaleString(
+            "en-IN"
+          )}`}
           icon={Wallet}
         />
 
         <Stat
           title="Paid Orders"
           value={paidOrders}
-          icon={
-            CheckCircle2
-          }
+          icon={CheckCircle2}
         />
       </div>
 
@@ -303,26 +286,14 @@ export default async function OrdersPage() {
                 order.id
               ] || [];
 
+            /* ============================= */
+            /* 💰 ORDER PROFIT */
+            /* ============================= */
+
             const orderProfit =
-              orderItems.reduce(
-                (
-                  sum: number,
-                  item: any
-                ) =>
-                  sum +
-                  (Number(
-                    item.final_price ||
-                      0
-                  ) -
-                    Number(
-                      item.cost_price ||
-                        0
-                    )) *
-                    Number(
-                      item.quantity ||
-                        0
-                    ),
-                0
+              Number(
+                order.platform_profit ||
+                  0
               );
 
             const statusUI =
@@ -333,15 +304,9 @@ export default async function OrdersPage() {
             const StatusIcon =
               statusUI.icon;
 
-            const isCourierPending =
-              order.courier_name ===
-              "Pending Assignment";
-
             return (
               <div
-                key={
-                  order.id
-                }
+                key={order.id}
                 className="bg-gradient-to-b from-zinc-900 to-zinc-950 border border-zinc-800 rounded-[30px] overflow-hidden"
               >
                 {/* TOP */}
@@ -413,28 +378,32 @@ export default async function OrdersPage() {
                     <div className="flex flex-col items-start xl:items-end gap-4">
                       <div className="text-left xl:text-right">
                         <p className="text-zinc-500 text-sm">
-                          Order
-                          Amount
+                          Order Amount
                         </p>
 
                         <p className="text-white text-3xl font-black">
                           ₹
-                          {
-                            order.total_amount
-                          }
+                          {Number(
+                            order.total_amount ||
+                              0
+                          ).toLocaleString(
+                            "en-IN"
+                          )}
                         </p>
                       </div>
 
                       <div className="text-left xl:text-right">
                         <p className="text-zinc-500 text-sm">
-                          Profit
+                          Platform Profit
                         </p>
 
                         <p className="text-green-400 text-2xl font-bold">
                           ₹
-                          {
+                          {Number(
                             orderProfit
-                          }
+                          ).toLocaleString(
+                            "en-IN"
+                          )}
                         </p>
                       </div>
 
@@ -477,17 +446,19 @@ export default async function OrdersPage() {
                           ?.url ||
                         "/placeholder.png";
 
+                      const itemProfit =
+                        Number(
+                          item.platform_profit ||
+                            0
+                        );
+
                       return (
                         <div
-                          key={
-                            index
-                          }
+                          key={index}
                           className="bg-black/30 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4"
                         >
                           <img
-                            src={
-                              image
-                            }
+                            src={image}
                             alt=""
                             className="w-20 h-20 rounded-2xl object-cover"
                           />
@@ -522,15 +493,11 @@ export default async function OrdersPage() {
 
                             <p className="text-green-400 font-bold">
                               ₹
-                              {(Number(
-                                item.final_price
-                              ) -
-                                Number(
-                                  item.cost_price
-                                )) *
-                                Number(
-                                  item.quantity
-                                )}
+                              {Number(
+                                itemProfit
+                              ).toLocaleString(
+                                "en-IN"
+                              )}
                             </p>
                           </div>
                         </div>
@@ -567,189 +534,145 @@ export default async function OrdersPage() {
 
                     {order.seller_paid ? (
                       <div className="px-4 py-2 rounded-xl bg-green-500/10 text-green-400 text-sm font-semibold">
-                        Seller
-                        Paid
+                        Seller Paid
+                      </div>
+                    ) : order.status ===
+                      "delivered" ? (
+                      <div className="px-4 py-2 rounded-xl bg-yellow-500/10 text-yellow-400 text-sm font-semibold">
+                        Payout Pending
                       </div>
                     ) : (
-                      <div className="px-4 py-2 rounded-xl bg-yellow-500/10 text-yellow-400 text-sm font-semibold">
-                        Seller
-                        Pending
+                      <div className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-400 text-sm font-semibold">
+                        Awaiting Delivery
                       </div>
                     )}
                   </div>
 
                   {/* ACTIONS */}
 
+                  <div className="flex flex-wrap gap-3">
+                    {order.awb_code && (
+                      <a
+                        href={
+                          order.tracking_url ||
+                          "#"
+                        }
+                        target="_blank"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-2xl font-semibold transition flex items-center gap-2"
+                      >
+                        <Truck className="w-4 h-4" />
 
-<div className="flex flex-wrap gap-3">
+                        Track
+                      </a>
+                    )}
 
-  {/* ======================================= */}
-  {/* CREATE SHIPMENT */}
-  {/* ======================================= */}
+                    {(order.status ===
+                      "accepted" ||
+                      order.status ===
+                        "processing") && (
+                      <form
+                        action={async () => {
+                          "use server";
 
-  {order.payment_status === "paid" &&
-    order.status === "accepted" &&
-    !order.shipment_id && (
-      <form
-        action={async () => {
-          "use server";
+                          await updateOrderStatusByAdmin(
+                            order.id,
+                            "shipped"
+                          );
+                        }}
+                      >
+                        <button className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-3 rounded-2xl font-semibold transition">
+                          Mark Shipped
+                        </button>
+                      </form>
+                    )}
 
-          await createShipmentByAdmin(
-            order.id
-          );
-        }}
-      >
-        <button className="bg-white text-black hover:bg-zinc-200 px-5 py-3 rounded-2xl font-semibold transition">
-          Create Shipment
-        </button>
-      </form>
-    )}
+                    {order.status ===
+                      "shipped" && (
+                      <form
+                        action={async () => {
+                          "use server";
 
-  {/* ======================================= */}
-  {/* RETRY COURIER */}
-  {/* ======================================= */}
+                          await updateOrderStatusByAdmin(
+                            order.id,
+                            "out_for_delivery"
+                          );
+                        }}
+                      >
+                        <button className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-3 rounded-2xl font-semibold transition">
+                          Out For
+                          Delivery
+                        </button>
+                      </form>
+                    )}
 
-  {isCourierPending &&
-    order.shipment_id && (
-      <form
-        action={async () => {
-          "use server";
+                    {order.status ===
+                      "out_for_delivery" && (
+                      <form
+                        action={async () => {
+                          "use server";
 
-          await retryCourierAssign(
-            order.id
-          );
-        }}
-      >
-        <button className="bg-yellow-500 text-black hover:bg-yellow-400 px-5 py-3 rounded-2xl font-semibold transition flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" />
+                          await updateOrderStatusByAdmin(
+                            order.id,
+                            "delivered"
+                          );
+                        }}
+                      >
+                        <button className="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-2xl font-semibold transition">
+                          Mark Delivered
+                        </button>
+                      </form>
+                    )}
 
-          Retry Courier
-        </button>
-      </form>
-    )}
+                    {order.payment_status ===
+                      "paid" &&
+                      order.status ===
+                        "delivered" &&
+                      !order.seller_paid &&
+                      order.payout_release_at &&
+                      new Date(
+                        order.payout_release_at
+                      ) <=
+                        new Date() && (
+                        <form
+                          action={async () => {
+                            "use server";
 
-  {/* ======================================= */}
-  {/* TRACK */}
-  {/* ======================================= */}
+                            await markSellerPaid(
+                              order.id
+                            );
+                          }}
+                        >
+                          <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-2xl font-semibold transition">
+                            Release Seller
+                            Payment
+                          </button>
+                        </form>
+                      )}
 
-  {order.awb_code && (
-    <a
-      href={
-        order.tracking_url ||
-        "#"
-      }
-      target="_blank"
-      className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-2xl font-semibold transition flex items-center gap-2"
-    >
-      <Truck className="w-4 h-4" />
+                    {order.payment_status ===
+                      "paid" &&
+                      order.status ===
+                        "delivered" &&
+                      !order.seller_paid &&
+                      order.payout_release_at &&
+                      new Date(
+                        order.payout_release_at
+                      ) >
+                        new Date() && (
+                        <div className="bg-yellow-500/10 text-yellow-400 px-5 py-3 rounded-2xl font-semibold">
+                          Return Window
+                          Active
+                        </div>
+                      )}
 
-      Track
-    </a>
-  )}
-
-  {/* ======================================= */}
-  {/* MARK SHIPPED */}
-  {/* ======================================= */}
-
-  {order.status ===
-    "accepted" &&
-    order.shipment_id && (
-      <form
-        action={async () => {
-          "use server";
-
-          await updateOrderStatusByAdmin(
-            order.id,
-            "shipped"
-          );
-        }}
-      >
-        <button className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-3 rounded-2xl font-semibold transition">
-          Mark Shipped
-        </button>
-      </form>
-    )}
-
-  {/* ======================================= */}
-  {/* OUT FOR DELIVERY */}
-  {/* ======================================= */}
-
-  {order.status ===
-    "shipped" && (
-      <form
-        action={async () => {
-          "use server";
-
-          await updateOrderStatusByAdmin(
-            order.id,
-            "out_for_delivery"
-          );
-        }}
-      >
-        <button className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-3 rounded-2xl font-semibold transition">
-          Out For Delivery
-        </button>
-      </form>
-    )}
-
-  {/* ======================================= */}
-  {/* DELIVERED */}
-  {/* ======================================= */}
-
-  {order.status ===
-    "out_for_delivery" && (
-      <form
-        action={async () => {
-          "use server";
-
-          await updateOrderStatusByAdmin(
-            order.id,
-            "delivered"
-          );
-        }}
-      >
-        <button className="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-2xl font-semibold transition">
-          Mark Delivered
-        </button>
-      </form>
-    )}
-
-  {/* ======================================= */}
-  {/* PAY SELLER */}
-  {/* ======================================= */}
-
-  {order.payment_status ===
-    "paid" &&
-    order.status ===
-      "delivered" &&
-    !order.seller_paid && (
-      <form
-        action={async () => {
-          "use server";
-
-          await markSellerPaid(
-            order.id
-          );
-        }}
-      >
-        <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-2xl font-semibold transition">
-          Pay Seller
-        </button>
-      </form>
-    )}
-
-  {/* ======================================= */}
-  {/* COMPLETED */}
-  {/* ======================================= */}
-
-  {order.status ===
-    "delivered" &&
-    order.seller_paid && (
-      <div className="bg-green-500/10 text-green-400 px-5 py-3 rounded-2xl font-semibold">
-        Completed
-      </div>
-    )}
-</div>
+                    {order.status ===
+                      "delivered" &&
+                      order.seller_paid && (
+                        <div className="bg-green-500/10 text-green-400 px-5 py-3 rounded-2xl font-semibold">
+                          Completed
+                        </div>
+                      )}
+                  </div>
                 </div>
               </div>
             );

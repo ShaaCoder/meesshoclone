@@ -1,40 +1,41 @@
-import { getSupabaseServer } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-
-import {
-  updateOrderStatus,
-  acceptOrder,
-} from "@/app/actions/seller";
-
 import { format } from "date-fns";
 
 import {
-  ShoppingBag,
-  Package,
-  IndianRupee,
   CalendarDays,
   CheckCircle2,
-  XCircle,
   Clock3,
-  Truck,
-  Printer,
   ExternalLink,
+  IndianRupee,
+  Package,
+  Printer,
+  ShoppingBag,
+  Truck,
+  XCircle,
 } from "lucide-react";
 
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import OrderStats from "@/components/dashboard/seller/order-stats";
+import {
+  acceptOrder,
+  updateOrderStatus,
+} from "@/app/actions/seller";
+
 export default async function SellerOrdersPage() {
-  const auth =
+  const supabase =
     await getSupabaseServer();
 
   const {
     data: { user },
-  } = await auth.auth.getUser();
+  } =
+    await supabase.auth.getUser();
 
   if (!user) {
     return null;
   }
 
   /* ============================= */
-  /* 📦 FETCH SELLER ORDERS */
+  /* 📦 FETCH ORDER ITEMS */
   /* ============================= */
 
   const {
@@ -48,6 +49,7 @@ export default async function SellerOrdersPage() {
       quantity,
       final_price,
       cost_price,
+      seller_earning,
       status,
       accepted_at,
       processing_at,
@@ -133,7 +135,7 @@ export default async function SellerOrdersPage() {
     Object.values(grouped);
 
   /* ============================= */
-  /* 🎨 STATUS STYLES */
+  /* 🎨 STATUS UI */
   /* ============================= */
 
   const getStatusStyles = (
@@ -189,7 +191,37 @@ export default async function SellerOrdersPage() {
   /* ============================= */
   /* 🚫 EMPTY */
   /* ============================= */
+const stats = {
+  total: items.length,
 
+  processing: items.filter(
+    (i: any) =>
+      i.status === "processing" ||
+      i.status === "accepted"
+  ).length,
+
+  shipped: items.filter(
+    (i: any) =>
+      i.status === "shipped" ||
+      i.status === "out_for_delivery"
+  ).length,
+
+  delivered: items.filter(
+    (i: any) =>
+      i.status === "delivered"
+  ).length,
+
+  returns: items.filter(
+    (i: any) =>
+      i.status === "returned" ||
+      i.status === "return_requested"
+  ).length,
+
+  cancelled: items.filter(
+    (i: any) =>
+      i.status === "cancelled"
+  ).length,
+};
   if (!orders.length) {
     return (
       <div className="max-w-5xl mx-auto p-6">
@@ -205,7 +237,7 @@ export default async function SellerOrdersPage() {
           <p className="text-zinc-500 mt-3 max-w-md mx-auto">
             Customer orders
             will appear here
-            once people start
+            once customers start
             purchasing your
             products.
           </p>
@@ -223,33 +255,25 @@ export default async function SellerOrdersPage() {
       {/* HEADER */}
 
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-black text-white">
-            Seller Orders
-          </h1>
+      
 
-          <p className="text-zinc-500 mt-2">
-            Manage invoices,
-            shipments and
-            customer orders
-          </p>
-        </div>
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
+  
+  {/* LEFT */}
+  <div>
+    <h1 className="text-4xl font-black text-white">
+      Seller Orders
+    </h1>
 
-        <div className="hidden md:flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-3">
-          <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center">
-            <ShoppingBag className="w-6 h-6 text-white" />
-          </div>
+    <p className="text-zinc-500 mt-2">
+      Manage shipments,
+      invoices and customer orders
+    </p>
+  </div>
 
-          <div>
-            <p className="text-zinc-500 text-sm">
-              Total Orders
-            </p>
-
-            <p className="text-white font-bold text-xl">
-              {orders.length}
-            </p>
-          </div>
-        </div>
+  {/* RIGHT */}
+  <OrderStats items={items || []} />
+</div>
       </div>
 
       {/* ORDERS */}
@@ -257,6 +281,10 @@ export default async function SellerOrdersPage() {
       <div className="space-y-6">
         {orders.map(
           (order: any) => {
+            /* ============================= */
+            /* 💰 SELLER TOTAL */
+            /* ============================= */
+
             const sellerTotal =
               order.items.reduce(
                 (
@@ -265,15 +293,15 @@ export default async function SellerOrdersPage() {
                 ) =>
                   sum +
                   Number(
-                    item.cost_price ||
+                    item.seller_earning ||
                       0
-                  ) *
-                    Number(
-                      item.quantity ||
-                        0
-                    ),
+                  ),
                 0
               );
+
+            /* ============================= */
+            /* 📦 TOTAL QTY */
+            /* ============================= */
 
             const totalQty =
               order.items.reduce(
@@ -309,8 +337,7 @@ export default async function SellerOrdersPage() {
 
                       <div>
                         <h2 className="text-2xl font-bold text-white">
-                          {order.order_code ||
-                            order.id}
+                          {order.order_code}
                         </h2>
 
                         <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-zinc-500">
@@ -362,16 +389,13 @@ export default async function SellerOrdersPage() {
 
                     <div className="text-left xl:text-right">
                       <p className="text-zinc-500 text-sm">
-                        Seller
-                        Earnings
+                        Seller Earnings
                       </p>
 
                       <div className="flex items-center gap-1 text-green-400 font-black text-3xl">
                         <IndianRupee className="w-6 h-6" />
 
-                        {
-                          sellerTotal
-                        }
+                        {sellerTotal}
                       </div>
                     </div>
                   </div>
@@ -420,7 +444,11 @@ export default async function SellerOrdersPage() {
                                 src={
                                   image
                                 }
-                                alt=""
+                                alt={
+                                  item
+                                    .products
+                                    ?.name
+                                }
                                 className="w-24 h-24 rounded-2xl object-cover border border-zinc-800"
                               />
 
@@ -455,10 +483,10 @@ export default async function SellerOrdersPage() {
 
                                 <span>
                                   Your
-                                  Cost:
+                                  Earnings:
                                   ₹
                                   {
-                                    item.cost_price
+                                    item.seller_earning
                                   }
                                 </span>
                               </div>
@@ -517,7 +545,7 @@ export default async function SellerOrdersPage() {
                               )}
                             </div>
 
-                            {/* TOTAL */}
+                            {/* EARNINGS */}
 
                             <div className="text-left lg:text-right">
                               <p className="text-zinc-500 text-xs">
@@ -527,13 +555,9 @@ export default async function SellerOrdersPage() {
                               <p className="text-white font-bold text-2xl">
                                 ₹
                                 {Number(
-                                  item.cost_price ||
+                                  item.seller_earning ||
                                     0
-                                ) *
-                                  Number(
-                                    item.quantity ||
-                                      0
-                                  )}
+                                )}
                               </p>
                             </div>
                           </div>
@@ -601,18 +625,18 @@ export default async function SellerOrdersPage() {
                                 Pickup
                               </div>
 
-                              {/* PRINT */}
+                              {item.order_id && (
+                                <a
+                                  href={`/dashboard/seller/invoices/${item.order_id}`}
+                                  target="_blank"
+                                  className="bg-white text-black hover:bg-zinc-200 px-5 py-3 rounded-2xl inline-flex items-center gap-2 font-semibold transition"
+                                >
+                                  <Printer className="w-5 h-5" />
 
-                              <a
-                                href={`/dashboard/seller/invoices/${order.id}`}
-                                target="_blank"
-                                className="bg-white text-black hover:bg-zinc-200 px-5 py-3 rounded-2xl inline-flex items-center gap-2 font-semibold transition"
-                              >
-                                <Printer className="w-5 h-5" />
-
-                                Print
-                                Invoice
-                              </a>
+                                  Download
+                                  Invoice
+                                </a>
+                              )}
                             </div>
                           )}
 

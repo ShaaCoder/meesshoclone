@@ -132,3 +132,25 @@ button:active {
   background: #cbd5f5;
   border-radius: 10px;
 }
+@media print {
+
+  nav,
+  aside,
+  header,
+  footer,
+  .print-hide {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .invoice-wrapper {
+    width: 210mm;
+    min-height: 297mm;
+    margin: auto;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

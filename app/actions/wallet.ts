@@ -2,92 +2,29 @@
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getSupabaseServer } from "@/lib/supabase-server";
+
 import { revalidatePath } from "next/cache";
-/* ============================= */
-/* 🧠 TYPES */
-/* ============================= */
+import {
+  holdWithdrawAmount,
+  approveWithdrawRequest,
+  rejectWithdrawRequest,
+} from "@/services/wallet-engine";
 
-
-
-/* ============================= */
-/* 💰 GET WALLET */
-/* ============================= */
+/* =========================================================
+   💰 GET WALLET
+========================================================= */
 
 export async function getWallet() {
-
   const supabase =
     await getSupabaseServer();
+
+  /* =========================================================
+     🔐 AUTH
+  ========================================================= */
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
-
-  const { data: wallet } =
-    await supabase
-      .from("wallets")
-      .select("*")
-      .eq("seller_id", user.id)
-      .maybeSingle();
-
-  return wallet;
-
-}
-
-/* ============================= */
-/* 📜 GET TRANSACTIONS */
-/* ============================= */
-
-export async function getTransactions() {
-
-  const supabase =
-    await getSupabaseServer();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
-
-  const { data } =
-    await supabase
-      .from("wallet_transactions")
-      .select("*")
-      .eq("seller_id", user.id)
-      .order("created_at", {
-        ascending: false,
-      });
-
-  return data || [];
-
-}
-
-/* ============================= */
-/* 💸 REQUEST WITHDRAW */
-/* ============================= */
-
-
-
-export async function requestWithdraw(
-  formData: FormData
-): Promise<void> {
-
-  const supabase =
-    await getSupabaseServer();
-
-  /* ============================= */
-  /* 🔐 AUTH */
-  /* ============================= */
-
-  const {
-    data: { user },
-  } =
-    await supabase.auth.getUser();
 
   if (!user) {
     throw new Error(
@@ -95,32 +32,15 @@ export async function requestWithdraw(
     );
   }
 
-  /* ============================= */
-  /* 💰 AMOUNT */
-  /* ============================= */
-
-  const amount = Number(
-    formData.get("amount")
-  );
-
-  if (
-    !amount ||
-    amount <= 0
-  ) {
-    throw new Error(
-      "Invalid amount"
-    );
-  }
-
-  /* ============================= */
-  /* 🏦 BANK CHECK */
-  /* ============================= */
+  /* =========================================================
+     💰 FETCH WALLET
+  ========================================================= */
 
   const {
-    data: bank,
-    error: bankError,
-  } = await supabase
-    .from("bank_accounts")
+    data: wallet,
+    error: walletError,
+  } = await supabaseAdmin
+    .from("wallets")
     .select("*")
     .eq(
       "seller_id",
@@ -128,130 +48,259 @@ export async function requestWithdraw(
     )
     .maybeSingle();
 
-  if (bankError) {
+  if (walletError) {
     console.error(
-      bankError
+      "❌ WALLET FETCH ERROR:",
+      walletError
     );
 
     throw new Error(
-      "Failed to fetch bank account"
+      "Failed to fetch wallet"
     );
   }
 
-  if (!bank) {
-    throw new Error(
-      "No bank account found"
+  /* =========================================================
+     🆕 AUTO CREATE WALLET
+  ========================================================= */
+
+  if (!wallet) {
+    const {
+      data: newWallet,
+      error: createError,
+    } = await supabaseAdmin
+      .from("wallets")
+      .insert({
+        seller_id: user.id,
+
+        balance: 0,
+
+        locked_balance: 0,
+      })
+      .select()
+      .single();
+
+    if (
+      createError ||
+      !newWallet
+    ) {
+      console.error(
+        "❌ WALLET CREATE ERROR:",
+        createError
+      );
+
+      throw new Error(
+        "Failed to create wallet"
+      );
+    }
+
+    console.log(
+      "✅ WALLET CREATED:",
+      newWallet
     );
+
+    return newWallet;
   }
 
-  if (!bank.is_verified) {
-    throw new Error(
-      "Bank account not verified"
-    );
-  }
+  return wallet;
+}
 
-  /* ============================= */
-  /* 💰 GET WALLET */
-  /* ============================= */
+/* =========================================================
+   📜 GET TRANSACTIONS
+========================================================= */
+
+export async function getTransactions() {
+  const supabase =
+    await getSupabaseServer();
 
   const {
-    data: wallet,
-    error: walletFetchError,
-  } = await supabase
-    .from("wallets")
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error(
+      "Unauthorized"
+    );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabaseAdmin
+    .from("wallet_transactions")
     .select("*")
     .eq(
       "seller_id",
       user.id
     )
-    .single();
+    .order("created_at", {
+      ascending: false,
+    });
 
-  if (
-    walletFetchError ||
-    !wallet
-  ) {
+  if (error) {
     console.error(
-      walletFetchError
+      "❌ TRANSACTION FETCH ERROR:",
+      error
     );
 
     throw new Error(
-      "Wallet not found"
+      "Failed to fetch transactions"
     );
   }
 
-  const availableBalance =
-    Number(
-      wallet.balance || 0
+  return data || [];
+}
+
+/* =========================================================
+   💸 REQUEST WITHDRAW
+========================================================= */
+
+export async function requestWithdraw(
+  formData: FormData
+) {
+  try {
+    const supabase =
+      await getSupabaseServer();
+
+    const {
+      data: { user },
+    } =
+      await supabase.auth.getUser();
+
+    if (!user) {
+      throw new Error(
+        "Unauthorized"
+      );
+    }
+
+    const amount = Number(
+      formData.get("amount") || 0
     );
 
-  const lockedBalance =
-    Number(
-      wallet.locked_balance ||
-        0
+    /* =========================================================
+       ✅ VALIDATION
+    ========================================================= */
+
+    if (
+      !amount ||
+      isNaN(amount)
+    ) {
+      throw new Error(
+        "Invalid amount"
+      );
+    }
+
+    if (amount < 100) {
+      throw new Error(
+        "Minimum withdraw amount is ₹100"
+      );
+    }
+
+    /* =========================================================
+       🚫 CHECK PENDING REQUEST
+    ========================================================= */
+
+    const {
+      data: existingRequest,
+    } = await supabaseAdmin
+      .from("withdraw_requests")
+      .select("id")
+      .eq(
+        "seller_id",
+        user.id
+      )
+      .eq(
+        "status",
+        "pending"
+      )
+      .maybeSingle();
+
+    if (existingRequest) {
+      throw new Error(
+        "You already have a pending withdraw request"
+      );
+    }
+
+    /* =========================================================
+       💰 GET WALLET
+    ========================================================= */
+
+    const {
+      data: wallet,
+      error: walletError,
+    } = await supabaseAdmin
+      .from("wallets")
+      .select("*")
+      .eq(
+        "seller_id",
+        user.id
+      )
+      .single();
+
+    if (
+      walletError ||
+      !wallet
+    ) {
+      console.error(
+        "❌ WALLET ERROR:",
+        walletError
+      );
+
+      throw new Error(
+        "Wallet not found"
+      );
+    }
+
+    const availableBalance =
+      Number(
+        wallet.balance || 0
+      );
+
+    const lockedBalance =
+      Number(
+        wallet.locked_balance || 0
+      );
+
+    /* =========================================================
+       🚫 INSUFFICIENT BALANCE
+    ========================================================= */
+
+    if (
+      availableBalance <
+      amount
+    ) {
+      throw new Error(
+        "Insufficient available balance"
+      );
+    }
+
+    console.log(
+      "💸 WITHDRAW REQUEST:",
+      {
+        sellerId: user.id,
+        amount,
+        availableBalance,
+        lockedBalance,
+      }
     );
 
-  /* ============================= */
-  /* 🚫 BALANCE CHECK */
-  /* ============================= */
+    /* =========================================================
+       🔒 MOVE AVAILABLE → LOCKED
+    ========================================================= */
 
-  if (
-    availableBalance <
-    amount
-  ) {
-    throw new Error(
-      "Insufficient balance"
-    );
-  }
+    await holdWithdrawAmount({
+  sellerId: user.id,
 
-  /* ============================= */
-  /* ❌ PENDING CHECK */
-  /* ============================= */
+  amount,
+});
 
-  const {
-    data: existing,
-    error: pendingError,
-  } = await supabase
-    .from(
-      "withdraw_requests"
-    )
-    .select("id")
-    .eq(
-      "seller_id",
-      user.id
-    )
-    .eq(
-      "status",
-      "pending"
-    );
+    /* =========================================================
+       📝 CREATE REQUEST
+    ========================================================= */
 
-  if (pendingError) {
-    console.error(
-      pendingError
-    );
-
-    throw new Error(
-      "Failed to check existing requests"
-    );
-  }
-
-  if (
-    existing &&
-    existing.length > 0
-  ) {
-    throw new Error(
-      "Pending withdraw request already exists"
-    );
-  }
-
-  /* ============================= */
-  /* ✅ CREATE WITHDRAW REQUEST */
-  /* ============================= */
-
-  const {
-    data: withdraw,
-    error: withdrawError,
-  } =
-    await supabaseAdmin
+    const {
+      data: request,
+      error: requestError,
+    } = await supabaseAdmin
       .from(
         "withdraw_requests"
       )
@@ -265,835 +314,278 @@ export async function requestWithdraw(
       .select()
       .single();
 
-  if (
-    withdrawError ||
-    !withdraw
-  ) {
+    if (
+      requestError ||
+      !request
+    ) {
+      console.error(
+        "❌ REQUEST ERROR:",
+        requestError
+      );
+
+      throw new Error(
+        "Failed to create withdraw request"
+      );
+    }
+
+    console.log(
+      "✅ WITHDRAW REQUEST CREATED:",
+      request.id
+    );
+
+    /* =========================================================
+       ♻️ REVALIDATE
+    ========================================================= */
+
+    revalidatePath(
+      "/dashboard/seller/wallet"
+    );
+
+    revalidatePath(
+      "/dashboard/admin/withdraws"
+    );
+
+    return {
+      success: true,
+
+      message:
+        "Withdraw request submitted successfully",
+    };
+  } catch (error: any) {
     console.error(
-      withdrawError
+      "❌ WITHDRAW REQUEST ERROR:",
+      error
     );
 
     throw new Error(
-      "Failed to create withdraw request"
+      error?.message ||
+        "Withdraw request failed"
     );
   }
-
-  /* ============================= */
-  /* 🔒 LOCK MONEY */
-  /* ============================= */
-
-  const {
-    error: walletError,
-  } =
-    await supabaseAdmin
-      .from("wallets")
-      .update({
-        balance:
-          availableBalance -
-          amount,
-
-        locked_balance:
-          lockedBalance +
-          amount,
-      })
-      .eq(
-        "seller_id",
-        user.id
-      );
-
-  if (walletError) {
-    console.error(
-      walletError
-    );
-
-    /* ============================= */
-    /* 🚨 ROLLBACK */
-    /* ============================= */
-
-    await supabaseAdmin
-      .from(
-        "withdraw_requests"
-      )
-      .delete()
-      .eq(
-        "id",
-        withdraw.id
-      );
-
-    throw new Error(
-      "Failed to lock balance"
-    );
-  }
-
-  /* ============================= */
-  /* 📜 TRANSACTION */
-  /* ============================= */
-
-  const {
-    error:
-      transactionError,
-  } =
-    await supabaseAdmin
-      .from(
-        "wallet_transactions"
-      )
-      .insert({
-        seller_id: user.id,
-
-        type: "lock",
-
-        amount,
-
-        reference_id:
-          withdraw.id,
-
-        note:
-          "Withdraw request created",
-      });
-
-  if (
-    transactionError
-  ) {
-    console.error(
-      transactionError
-    );
-  }
-
-  /* ============================= */
-  /* 🔄 REVALIDATE */
-  /* ============================= */
-
-  revalidatePath(
-    "/dashboard/seller/wallet"
-  );
-
-  revalidatePath(
-    "/dashboard/admin/withdraws"
-  );
-
-  return;
 }
 
-/* ============================= */
-/* ✅ APPROVE WITHDRAW */
-/* ============================= */
+/* =========================================================
+   ✅ APPROVE WITHDRAW
+========================================================= */
 
 export async function approveWithdraw(
   withdrawId: string
 ) {
-  /* ============================= */
-  /* 📦 GET REQUEST */
-  /* ============================= */
-
-  const { data: withdraw } =
-    await supabaseAdmin
-      .from("withdraw_requests")
-      .select("*")
-      .eq("id", withdrawId)
-      .single();
-
-  if (
-    !withdraw ||
-    withdraw.status !== "pending"
-  ) {
-    throw new Error(
-      "Invalid withdraw request"
-    );
-  }
-
-  /* ============================= */
-  /* 💰 GET WALLET */
-  /* ============================= */
-
-  const { data: wallet } =
-    await supabaseAdmin
-      .from("wallets")
-      .select("*")
-      .eq(
-        "seller_id",
-        withdraw.seller_id
-      )
-      .single();
-
-  if (!wallet) {
-    throw new Error(
-      "Wallet not found"
-    );
-  }
-
-  const withdrawAmount = Number(
-    withdraw.amount || 0
-  );
-
-  const lockedBalance = Number(
-    wallet.locked_balance || 0
-  );
-
-  /* ============================= */
-  /* 🚫 VALIDATION */
-  /* ============================= */
-
-  if (
-    lockedBalance <
-    withdrawAmount
-  ) {
-    throw new Error(
-      "Insufficient locked balance"
-    );
-  }
-
-  /* ============================= */
-  /* 🔓 REMOVE LOCKED BALANCE */
-  /* ============================= */
-
-  const { error: walletError } =
-    await supabaseAdmin
-      .from("wallets")
-      .update({
-        locked_balance:
-          lockedBalance -
-          withdrawAmount,
-      })
-      .eq(
-        "seller_id",
-        withdraw.seller_id
+  try {
+    if (!withdrawId) {
+      throw new Error(
+        "Withdraw ID required"
       );
+    }
 
-  if (walletError) {
-    console.error(
-      walletError
-    );
-
-    throw new Error(
-      "Failed to update wallet"
-    );
-  }
-
-  /* ============================= */
-  /* 📜 TRANSACTION */
-  /* ============================= */
-
-  await supabaseAdmin
-    .from("wallet_transactions")
-    .insert({
-      seller_id:
-        withdraw.seller_id,
-
-      type: "release",
-
-      amount: withdrawAmount,
-
-      reference_id:
-        withdraw.id,
-
-      note:
-        "Withdraw approved by admin",
+    await approveWithdrawRequest({
+      withdrawRequestId:
+        withdrawId,
     });
 
-  /* ============================= */
-  /* ✅ UPDATE REQUEST */
-  /* ============================= */
+    revalidatePath(
+      "/dashboard/seller/wallet"
+    );
 
-  await supabaseAdmin
-    .from("withdraw_requests")
-    .update({
-      status: "paid",
+    revalidatePath(
+      "/dashboard/admin/withdraws"
+    );
 
-      processed_at:
-        new Date().toISOString(),
-    })
-    .eq("id", withdrawId);
+    return {
+      success: true,
+    };
+  } catch (error: any) {
+    console.error(
+      "❌ APPROVE WITHDRAW ERROR:",
+      error
+    );
 
-  revalidatePath(
-    "/dashboard/seller/wallet"
-  );
-
-  revalidatePath(
-    "/dashboard/admin/withdraws"
-  );
-
-  return {
-    success: true,
-  };
+    throw new Error(
+      error?.message ||
+        "Failed to approve withdraw"
+    );
+  }
 }
-/* ============================= */
-/* ❌ REJECT WITHDRAW */
-/* ============================= */
+
+/* =========================================================
+   ❌ REJECT WITHDRAW
+========================================================= */
 
 export async function rejectWithdraw(
   withdrawId: string
 ) {
-  /* ============================= */
-  /* 📦 GET REQUEST */
-  /* ============================= */
-
-  const { data: withdraw } =
-    await supabaseAdmin
-      .from("withdraw_requests")
-      .select("*")
-      .eq("id", withdrawId)
-      .single();
-
-  if (
-    !withdraw ||
-    withdraw.status !== "pending"
-  ) {
-    throw new Error(
-      "Invalid withdraw request"
-    );
-  }
-
-  /* ============================= */
-  /* 💰 GET WALLET */
-  /* ============================= */
-
-  const { data: wallet } =
-    await supabaseAdmin
-      .from("wallets")
-      .select("*")
-      .eq(
-        "seller_id",
-        withdraw.seller_id
-      )
-      .single();
-
-  if (!wallet) {
-    throw new Error(
-      "Wallet not found"
-    );
-  }
-
-  const lockedBalance = Number(
-    wallet.locked_balance || 0
-  );
-
-  const withdrawAmount = Number(
-    withdraw.amount || 0
-  );
-
-  /* ============================= */
-  /* 🔓 UNLOCK BALANCE */
-  /* ============================= */
-
-  const { error: walletError } =
-    await supabaseAdmin
-      .from("wallets")
-     .update({
-  balance:
-    Number(wallet.balance || 0) +
-    withdrawAmount,
-
-  locked_balance:
-    Math.max(
-      0,
-      lockedBalance -
-        withdrawAmount
-    ),
-})
-      .eq(
-        "seller_id",
-        withdraw.seller_id
+  try {
+    if (!withdrawId) {
+      throw new Error(
+        "Withdraw ID required"
       );
+    }
 
-  if (walletError) {
-    console.error(walletError);
-
-    throw new Error(
-      "Failed to unlock balance"
-    );
-  }
-
-  /* ============================= */
-  /* 📜 TRANSACTION */
-  /* ============================= */
-
-  await supabaseAdmin
-    .from("wallet_transactions")
-    .insert({
-      seller_id:
-        withdraw.seller_id,
-
-      type: "release",
-
-      amount: withdrawAmount,
-
-      reference_id:
-        withdraw.id,
-
-      note:
-        "Withdraw rejected",
+    await rejectWithdrawRequest({
+      withdrawRequestId:
+        withdrawId,
     });
 
-  /* ============================= */
-  /* ❌ UPDATE REQUEST */
-  /* ============================= */
-
-  await supabaseAdmin
-    .from("withdraw_requests")
-    .update({
-      status: "rejected",
-    })
-    .eq("id", withdrawId);
-
-  return {
-    success: true,
-  };
-}
-/* ============================= */
-/* 💰 CREDIT SELLER WALLET */
-/* ============================= */
-
-export async function creditSellerWallet({
-  sellerId,
-  orderId,
-  amount,
-}: {
-  sellerId: string;
-  orderId: string;
-  amount: number;
-}) {
-
-  if (
-    !sellerId ||
-    !orderId ||
-    !amount
-  ) {
-    throw new Error(
-      "Missing params"
-    );
-  }
-
-  /* ============================= */
-  /* 🚫 DOUBLE CREDIT CHECK */
-  /* ============================= */
-
-  const { data: existing } =
-    await supabaseAdmin
-      .from("wallet_transactions")
-      .select("id")
-      .eq("reference_id", orderId)
-      .eq("type", "credit")
-      .maybeSingle();
-
-  if (existing) {
-    return;
-  }
-
-  /* ============================= */
-  /* 💰 GET WALLET */
-  /* ============================= */
-
-  const { data: wallet } =
-    await supabaseAdmin
-      .from("wallets")
-      .select("*")
-      .eq("seller_id", sellerId)
-      .maybeSingle();
-
-  if (!wallet) {
-
-    const { error } =
-      await supabaseAdmin
-        .from("wallets")
-        .insert({
-          seller_id: sellerId,
-
-          balance: 0,
-
-          locked_balance: amount,
-        });
-
-    if (error) {
-      console.error(error);
-
-      throw new Error(
-        "Failed to create wallet"
-      );
-    }
-
-  } else {
-
-    const { error } =
-      await supabaseAdmin
-        .from("wallets")
-        .update({
-          locked_balance:
-            Number(
-              wallet.locked_balance || 0
-            ) + amount,
-        })
-        .eq("seller_id", sellerId);
-
-    if (error) {
-      console.error(error);
-
-      throw new Error(
-        "Failed to update wallet"
-      );
-    }
-  }
-
-  /* ============================= */
-  /* 📜 TRANSACTION */
-  /* ============================= */
-
-  await supabaseAdmin
-    .from("wallet_transactions")
-    .insert({
-      seller_id: sellerId,
-
-      type: "credit",
-
-      amount,
-
-      reference_id: orderId,
-
-      note:
-        "Order earning locked",
-    });
-}
-
-/* ============================= */
-/* 🔓 RELEASE WALLET BALANCE */
-/* ============================= */
-
-/* ============================= */
-/* 🔓 RELEASE WALLET BALANCE */
-/* ============================= */
-
-export async function releaseWalletBalance({
-  sellerId,
-  orderId,
-  amount,
-}: {
-  sellerId: string;
-  orderId: string;
-  amount: number;
-}) {
-
-  if (
-    !sellerId ||
-    !orderId ||
-    !amount
-  ) {
-    throw new Error(
-      "Missing params"
-    );
-  }
-
-  /* ============================= */
-  /* 🚫 DOUBLE RELEASE CHECK */
-  /* ============================= */
-
-  const {
-    data: existingRelease,
-  } = await supabaseAdmin
-    .from(
-      "wallet_transactions"
-    )
-    .select("id")
-    .eq("seller_id", sellerId)
-    .eq("reference_id", orderId)
-    .eq("type", "release")
-    .maybeSingle();
-
-  if (existingRelease) {
-    return;
-  }
-
-  /* ============================= */
-  /* 💰 GET WALLET */
-  /* ============================= */
-
-  let {
-    data: wallet,
-  } = await supabaseAdmin
-    .from("wallets")
-    .select("*")
-    .eq(
-      "seller_id",
-      sellerId
-    )
-    .maybeSingle();
-
-  /* ============================= */
-  /* 🆕 AUTO CREATE WALLET */
-  /* ============================= */
-
-  if (!wallet) {
-
-    const {
-      data: newWallet,
-      error:
-        createWalletError,
-    } = await supabaseAdmin
-      .from("wallets")
-      .insert({
-        seller_id: sellerId,
-
-        balance: amount,
-
-        locked_balance: 0,
-      })
-      .select()
-      .single();
-
-    if (
-      createWalletError ||
-      !newWallet
-    ) {
-      console.error(
-        createWalletError
-      );
-
-      throw new Error(
-        "Failed to create wallet"
-      );
-    }
-
-    /* ============================= */
-    /* 📜 TRANSACTION */
-    /* ============================= */
-
-    await supabaseAdmin
-      .from(
-        "wallet_transactions"
-      )
-      .insert({
-        seller_id: sellerId,
-
-        type: "release",
-
-        amount,
-
-        reference_id:
-          orderId,
-
-        note:
-          "Wallet auto-created and payout released",
-      });
-
-    return;
-  }
-
-  /* ============================= */
-  /* 🔓 MOVE LOCKED → AVAILABLE */
-  /* ============================= */
-
-  const lockedBalance =
-    Number(
-      wallet.locked_balance ||
-        0
+    revalidatePath(
+      "/dashboard/seller/wallet"
     );
 
-  const availableBalance =
-    Number(
-      wallet.balance || 0
+    revalidatePath(
+      "/dashboard/admin/withdraws"
     );
 
-  const releaseAmount =
-    Math.min(
-      lockedBalance,
-      amount
-    );
-
-  const {
-    error: updateError,
-  } = await supabaseAdmin
-    .from("wallets")
-    .update({
-      balance:
-        availableBalance +
-        releaseAmount,
-
-      locked_balance:
-        Math.max(
-          0,
-          lockedBalance -
-            releaseAmount
-        ),
-    })
-    .eq(
-      "seller_id",
-      sellerId
-    );
-
-  if (updateError) {
+    return {
+      success: true,
+    };
+  } catch (error: any) {
     console.error(
-      updateError
+      "❌ REJECT WITHDRAW ERROR:",
+      error
     );
 
     throw new Error(
-      "Failed to release balance"
+      error?.message ||
+        "Failed to reject withdraw"
     );
   }
-
-  /* ============================= */
-  /* 📜 TRANSACTION */
-  /* ============================= */
-
-  await supabaseAdmin
-    .from(
-      "wallet_transactions"
-    )
-    .insert({
-      seller_id: sellerId,
-
-      type: "release",
-
-      amount:
-        releaseAmount,
-
-      reference_id:
-        orderId,
-
-      note:
-        "Seller payout released",
-    });
-}
-/* ============================= */
-/* 💸 REFUND SELLER WALLET */
-/* ============================= */
-
-export async function refundSellerWallet({
-  sellerId,
-  orderId,
-  amount,
-}: {
-  sellerId: string;
-  orderId: string;
-  amount: number;
-}) {
-
-  const { data: wallet } =
-    await supabaseAdmin
-      .from("wallets")
-      .select("*")
-      .eq("seller_id", sellerId)
-      .single();
-
-  if (!wallet) {
-    throw new Error(
-      "Wallet not found"
-    );
-  }
-
-  const { error } =
-    await supabaseAdmin
-      .from("wallets")
-      .update({
-        balance: Math.max(
-          0,
-          Number(wallet.balance || 0) -
-            amount
-        ),
-      })
-      .eq("seller_id", sellerId);
-
-  if (error) {
-    console.error(error);
-
-    throw new Error(
-      "Failed to refund wallet"
-    );
-  }
-
-  /* ============================= */
-  /* 📜 TRANSACTION */
-  /* ============================= */
-
-  await supabaseAdmin
-    .from("wallet_transactions")
-    .insert({
-      seller_id: sellerId,
-
-      type: "debit",
-
-      amount,
-
-      reference_id: orderId,
-
-      note: "Order refunded",
-    });
 }
 
-/* ============================= */
-/* 🏦 SAVE BANK DETAILS */
-/* ============================= */
+/* =========================================================
+   🏦 SAVE BANK DETAILS
+========================================================= */
 
 export async function saveBankDetails(
   userId: string,
   data: any
 ) {
-
   if (!userId) {
-    throw new Error("Unauthorized");
-  }
-
-  if (
-    !data.accountNumber ||
-    !data.ifsc ||
-    !data.name
-  ) {
     throw new Error(
-      "Missing bank details"
+      "Unauthorized"
     );
   }
 
-  await supabaseAdmin
+  if (
+    !data.name ||
+    !data.accountNumber ||
+    !data.ifsc
+  ) {
+    throw new Error(
+      "Missing required bank details"
+    );
+  }
+
+  const {
+    error,
+  } = await supabaseAdmin
     .from("bank_accounts")
     .upsert({
       seller_id: userId,
 
       account_holder_name:
-        data.name,
+        String(
+          data.name
+        ).trim(),
 
       account_number:
-        data.accountNumber,
+        String(
+          data.accountNumber
+        ).trim(),
 
-      ifsc_code: data.ifsc,
+      ifsc_code: String(
+        data.ifsc
+      ).trim(),
 
-      bank_name:
-        data.bankName || "",
+      bank_name: String(
+        data.bankName || ""
+      ).trim(),
 
-      upi_id: data.upi || "",
+      upi_id: String(
+        data.upi || ""
+      ).trim(),
 
       is_verified: false,
     });
 
+  if (error) {
+    console.error(
+      "❌ BANK SAVE ERROR:",
+      error
+    );
+
+    throw new Error(
+      "Failed to save bank details"
+    );
+  }
+
+  revalidatePath(
+    "/dashboard/seller/wallet"
+  );
+
+  return {
+    success: true,
+  };
 }
 
-/* ============================= */
-/* 🏦 SAVE BANK FORM ACTION */
-/* ============================= */
+/* =========================================================
+   🏦 SAVE BANK FORM ACTION
+========================================================= */
 
 export async function saveBankDetailsAction(
   formData: FormData
 ) {
+  try {
+    const supabase =
+      await getSupabaseServer();
 
-  const supabase =
-    await getSupabaseServer();
+    const {
+      data: { user },
+    } =
+      await supabase.auth.getUser();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error(
+        "Unauthorized"
+      );
+    }
 
-  if (!user) {
-    throw new Error("Unauthorized");
+    await saveBankDetails(
+      user.id,
+      {
+        name:
+          formData.get("name"),
+
+        accountNumber:
+          formData.get(
+            "accountNumber"
+          ),
+
+        ifsc:
+          formData.get(
+            "ifsc"
+          ),
+
+        bankName:
+          formData.get(
+            "bankName"
+          ),
+
+        upi:
+          formData.get("upi"),
+      }
+    );
+
+    return {
+      success: true,
+    };
+  } catch (error: any) {
+    console.error(
+      "❌ SAVE BANK ERROR:",
+      error
+    );
+
+    throw new Error(
+      error?.message ||
+        "Failed to save bank details"
+    );
   }
-
-  await saveBankDetails(user.id, {
-    name: formData.get("name"),
-
-    accountNumber:
-      formData.get("accountNumber"),
-
-    ifsc: formData.get("ifsc"),
-
-    bankName:
-      formData.get("bankName"),
-
-    upi: formData.get("upi"),
-  });
-
 }

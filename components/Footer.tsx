@@ -13,7 +13,7 @@ export default function Footer() {
 
         {/* BRAND */}
         <div>
-          <h2 className="text-xl font-bold text-white">ShopSphere</h2>
+          <h2 className="text-xl font-bold text-white">YourShop</h2>
           <p className="text-sm mt-3 text-gray-400">
             Discover trending products at the best prices. Fast delivery &
             trusted shopping experience.
@@ -43,7 +43,7 @@ export default function Footer() {
         {/* CONTACT */}
         <div>
           <h3 className="font-semibold text-white mb-3">Contact</h3>
-          <p className="text-sm text-gray-400">support@shopsphere.com</p>
+          <p className="text-sm text-gray-400">support@YourShop.com</p>
 
           {/* SOCIAL */}
           <div className="flex gap-4 mt-4">
@@ -57,7 +57,7 @@ export default function Footer() {
 
       {/* BOTTOM */}
       <div className="border-t border-gray-800 text-center text-sm py-4 text-gray-500">
-        © {new Date().getFullYear()} ShopSphere. All rights reserved.
+        © {new Date().getFullYear()} YourShop. All rights reserved.
       </div>
 
     </footer>

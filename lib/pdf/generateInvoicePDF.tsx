@@ -6,9 +6,9 @@ import {
 
 import bwipjs from "bwip-js";
 
-/* ======================================== */
-/* 🧾 GENERATE MARKETPLACE INVOICE PDF */
-/* ======================================== */
+/* =======================================================
+   🧾 GENERATE MARKETPLACE INVOICE PDF
+======================================================= */
 
 export async function generateInvoicePDF(
   order: any,
@@ -16,33 +16,44 @@ export async function generateInvoicePDF(
   invoiceNumber: string,
   summary: {
     totalGST: number;
+
     totalTaxable: number;
+
+    totalPlatformFee?: number;
+
+    totalSellerProfit?: number;
+
     cgst?: number;
+
     sgst?: number;
+
     igst?: number;
+
     grandTotal: number;
   }
 ) {
-  /* ======================================== */
-  /* 📄 DYNAMIC PAGE HEIGHT */
-  /* ======================================== */
+  /* =======================================================
+     📄 PAGE HEIGHT
+  ======================================================= */
 
-  const pageHeight = Math.max(
-    950,
-    700 + items.length * 28
-  );
+  const pageHeight =
+    Math.max(
+      1100,
+      760 + items.length * 42
+    );
 
   const pdfDoc =
     await PDFDocument.create();
 
-  const page = pdfDoc.addPage([
-    620,
-    pageHeight,
-  ]);
+  const page =
+    pdfDoc.addPage([
+      650,
+      pageHeight,
+    ]);
 
-  /* ======================================== */
-  /* 🔤 FONTS */
-  /* ======================================== */
+  /* =======================================================
+     🔤 FONTS
+  ======================================================= */
 
   const font =
     await pdfDoc.embedFont(
@@ -54,9 +65,9 @@ export async function generateInvoicePDF(
       StandardFonts.HelveticaBold
     );
 
-  /* ======================================== */
-  /* 🎨 COLORS */
-  /* ======================================== */
+  /* =======================================================
+     🎨 COLORS
+  ======================================================= */
 
   const black = rgb(0, 0, 0);
 
@@ -67,88 +78,122 @@ export async function generateInvoicePDF(
   );
 
   const lightGray = rgb(
-    0.93,
-    0.93,
-    0.93
+    0.94,
+    0.94,
+    0.94
   );
 
-  /* ======================================== */
-  /* 📍 START POSITION */
-  /* ======================================== */
+  const borderGray = rgb(
+    0.8,
+    0.8,
+    0.8
+  );
 
-  let y = pageHeight - 50;
+  /* =======================================================
+     📍 START Y
+  ======================================================= */
 
-  /* ======================================== */
-  /* 🏢 SELLER DETAILS */
-  /* ======================================== */
+  let y =
+    pageHeight - 45;
+
+  /* =======================================================
+     🏢 SELLER
+  ======================================================= */
 
   const seller =
     order?.seller || {};
 
   const sellerAddress =
-    order?.sellerAddress || {};
+    order?.sellerAddress ||
+    {};
 
-  page.drawText("TAX INVOICE", {
-    x: 240,
-    y,
-    size: 20,
-    font: bold,
-    color: black,
+  /* =======================================================
+     🧾 TITLE
+  ======================================================= */
+
+  page.drawText(
+    "TAX INVOICE",
+    {
+      x: 245,
+      y,
+      size: 22,
+      font: bold,
+      color: black,
+    }
+  );
+
+  y -= 45;
+
+  /* =======================================================
+     📦 BOXES
+  ======================================================= */
+
+  page.drawRectangle({
+    x: 35,
+    y: y - 120,
+    width: 270,
+    height: 120,
+    borderWidth: 1,
+    borderColor:
+      borderGray,
   });
 
-  y -= 40;
-
-  /* ======================================== */
-  /* 🧾 SELLER SECTION */
-  /* ======================================== */
-
-  page.drawText("Sold By:", {
-    x: 40,
-    y,
-    size: 11,
-    font: bold,
+  page.drawRectangle({
+    x: 330,
+    y: y - 120,
+    width: 285,
+    height: 120,
+    borderWidth: 1,
+    borderColor:
+      borderGray,
   });
 
-  y -= 18;
+  /* =======================================================
+     🏪 SOLD BY
+  ======================================================= */
+
+  page.drawText(
+    "Sold By",
+    {
+      x: 45,
+      y: y - 18,
+      size: 12,
+      font: bold,
+    }
+  );
 
   page.drawText(
     seller?.name ||
       "Marketplace Seller",
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 40,
       size: 10,
       font,
     }
   );
-
-  y -= 14;
 
   page.drawText(
     sellerAddress?.warehouse_name ||
       "Warehouse",
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 56,
       size: 10,
       font,
     }
   );
-
-  y -= 14;
 
   page.drawText(
     sellerAddress?.address_line ||
       "Address unavailable",
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 72,
       size: 10,
       font,
     }
   );
-
-  y -= 14;
 
   page.drawText(
     `${sellerAddress?.city || ""}, ${
@@ -157,14 +202,12 @@ export async function generateInvoicePDF(
       sellerAddress?.pincode || ""
     }`,
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 88,
       size: 10,
       font,
     }
   );
-
-  y -= 14;
 
   page.drawText(
     `Phone: ${
@@ -173,161 +216,156 @@ export async function generateInvoicePDF(
       "-"
     }`,
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 104,
       size: 10,
       font,
     }
   );
 
-  /* ======================================== */
-  /* 🧾 INVOICE DETAILS */
-  /* ======================================== */
+  /* =======================================================
+     🧾 INVOICE INFO
+  ======================================================= */
 
-  const rightX = 360;
-  let rightY = pageHeight - 90;
+  const invoiceX = 345;
 
   page.drawText(
     `Invoice No: ${invoiceNumber}`,
     {
-      x: rightX,
-      y: rightY,
+      x: invoiceX,
+      y: y - 18,
       size: 10,
       font: bold,
     }
   );
 
-  rightY -= 16;
-
   page.drawText(
     `Order ID: ${
-      order?.order_code || order?.id
+      order?.order_code ||
+      order?.id
     }`,
     {
-      x: rightX,
-      y: rightY,
+      x: invoiceX,
+      y: y - 36,
       size: 10,
       font,
     }
   );
-
-  rightY -= 16;
 
   page.drawText(
     `Date: ${new Date().toLocaleDateString()}`,
     {
-      x: rightX,
-      y: rightY,
+      x: invoiceX,
+      y: y - 54,
       size: 10,
       font,
     }
   );
 
-  rightY -= 16;
-
   page.drawText(
-    `Payment: ${(
+    `Payment Method: ${(
       order?.payment_method ||
       "COD"
     ).toUpperCase()}`,
     {
-      x: rightX,
-      y: rightY,
+      x: invoiceX,
+      y: y - 72,
       size: 10,
       font,
     }
   );
 
-  rightY -= 16;
-
   page.drawText(
-    `Status: ${(
+    `Payment Status: ${(
       order?.payment_status ||
       "unpaid"
     ).toUpperCase()}`,
     {
-      x: rightX,
-      y: rightY,
+      x: invoiceX,
+      y: y - 90,
       size: 10,
       font,
     }
   );
 
-  /* ======================================== */
-  /* 👤 CUSTOMER SECTION */
-  /* ======================================== */
+  /* =======================================================
+     👤 CUSTOMER
+  ======================================================= */
 
-  y -= 45;
+  y -= 155;
 
-  page.drawText("Ship To:", {
-    x: 40,
-    y,
-    size: 11,
-    font: bold,
+  page.drawRectangle({
+    x: 35,
+    y: y - 95,
+    width: 580,
+    height: 95,
+    borderWidth: 1,
+    borderColor:
+      borderGray,
   });
 
-  y -= 18;
+  page.drawText(
+    "Shipping Address",
+    {
+      x: 45,
+      y: y - 18,
+      size: 12,
+      font: bold,
+    }
+  );
 
-  const customerAddress =
+  const customer =
     order?.addresses || {};
 
   page.drawText(
-    customerAddress?.name ||
+    customer?.name ||
       "Customer",
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 40,
       size: 10,
       font,
     }
   );
 
-  y -= 14;
-
   page.drawText(
-    customerAddress?.phone || "-",
+    customer?.phone || "-",
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 56,
       size: 10,
       font,
     }
   );
 
-  y -= 14;
-
   page.drawText(
-    customerAddress?.address_line ||
+    customer?.address_line ||
       "",
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 72,
       size: 10,
       font,
     }
   );
-
-  y -= 14;
 
   page.drawText(
-    `${customerAddress?.city || ""}, ${
-      customerAddress?.state || ""
+    `${customer?.city || ""}, ${
+      customer?.state || ""
     } - ${
-      customerAddress?.pincode || ""
+      customer?.pincode || ""
     }`,
     {
-      x: 40,
-      y,
+      x: 45,
+      y: y - 88,
       size: 10,
       font,
     }
   );
 
-  /* ======================================== */
-  /* 📦 BARCODE */
-  /* ======================================== */
-
-  y -= 50;
+  /* =======================================================
+     📦 BARCODE
+  ======================================================= */
 
   const awb =
     order?.awb_code ||
@@ -349,98 +387,113 @@ export async function generateInvoicePDF(
         barcodeBuffer
       );
 
-    page.drawImage(barcode, {
-      x: 360,
-      y: y - 10,
-      width: 200,
-      height: 50,
-    });
+    page.drawImage(
+      barcode,
+      {
+        x: 385,
+        y: y - 80,
+        width: 190,
+        height: 45,
+      }
+    );
 
     page.drawText(
       `AWB: ${awb}`,
       {
-        x: 400,
-        y: y - 25,
-        size: 10,
+        x: 425,
+        y: y - 92,
+        size: 9,
         font,
       }
     );
   } catch (error) {
     console.log(
-      "Barcode generation failed"
+      "Barcode failed"
     );
   }
 
-  /* ======================================== */
-  /* 📋 TABLE HEADER */
-  /* ======================================== */
+  /* =======================================================
+     📋 TABLE HEADER
+  ======================================================= */
 
-  y -= 80;
+  y -= 140;
 
   page.drawRectangle({
-    x: 40,
+    x: 35,
     y: y - 5,
-    width: 540,
-    height: 24,
+    width: 580,
+    height: 28,
     color: lightGray,
   });
 
-  page.drawText("Product", {
-    x: 45,
-    y,
-    size: 10,
-    font: bold,
-  });
+  page.drawText(
+    "Product",
+    {
+      x: 45,
+      y,
+      size: 10,
+      font: bold,
+    }
+  );
 
   page.drawText("Qty", {
-    x: 280,
+    x: 285,
     y,
     size: 10,
     font: bold,
   });
 
-  page.drawText("Price", {
-    x: 340,
-    y,
-    size: 10,
-    font: bold,
-  });
+  page.drawText(
+    "Selling",
+    {
+      x: 335,
+      y,
+      size: 10,
+      font: bold,
+    }
+  );
 
   page.drawText("GST", {
-    x: 420,
+    x: 415,
     y,
     size: 10,
     font: bold,
   });
 
-  page.drawText("Total", {
-    x: 500,
-    y,
-    size: 10,
-    font: bold,
-  });
+  page.drawText(
+    "Total",
+    {
+      x: 520,
+      y,
+      size: 10,
+      font: bold,
+    }
+  );
 
-  y -= 30;
+  y -= 35;
 
-  /* ======================================== */
-  /* 📦 ITEMS */
-  /* ======================================== */
+  /* =======================================================
+     📦 ITEMS
+  ======================================================= */
 
   for (const item of items) {
-    const quantity = Number(
-      item.quantity || 0
-    );
+    const quantity =
+      Number(
+        item.quantity || 0
+      );
 
-    const finalPrice = Number(
-      item.final_price || 0
-    );
+    const finalPrice =
+      Number(
+        item.final_price || 0
+      );
 
-    const gstPercent = Number(
-      item.gst_percent || 0
-    );
+    const gstPercent =
+      Number(
+        item.gst_percent || 0
+      );
 
     const total =
-      quantity * finalPrice;
+      finalPrice;
 
     const productName = (
       item?.products?.name ||
@@ -448,22 +501,60 @@ export async function generateInvoicePDF(
       "Product"
     ).slice(0, 42);
 
-    /* ======================================== */
-    /* 🧠 ROW */
-    /* ======================================== */
+    const variant =
+      item?.product_variants;
 
-    page.drawText(productName, {
-      x: 45,
-      y,
-      size: 9,
-      font,
-    });
+    const attrs =
+      variant?.attributes ||
+      {};
+
+    const attrText =
+      Object.entries(attrs)
+        .map(
+          ([k, v]) =>
+            `${k}: ${v}`
+        )
+        .join(" | ")
+        .slice(0, 55);
+
+    /* ============================= */
+    /* PRODUCT */
+    /* ============================= */
+
+    page.drawText(
+      productName,
+      {
+        x: 45,
+        y,
+        size: 9,
+        font: bold,
+      }
+    );
+
+    y -= 14;
+
+    if (attrText) {
+      page.drawText(
+        attrText,
+        {
+          x: 45,
+          y,
+          size: 8,
+          font,
+          color: gray,
+        }
+      );
+    }
+
+    /* ============================= */
+    /* OTHER DATA */
+    /* ============================= */
 
     page.drawText(
       String(quantity),
       {
-        x: 285,
-        y,
+        x: 290,
+        y: y + 14,
         size: 9,
         font,
       }
@@ -474,8 +565,8 @@ export async function generateInvoicePDF(
         2
       )}`,
       {
-        x: 330,
-        y,
+        x: 325,
+        y: y + 14,
         size: 9,
         font,
       }
@@ -484,64 +575,122 @@ export async function generateInvoicePDF(
     page.drawText(
       `${gstPercent}%`,
       {
-        x: 425,
-        y,
+        x: 420,
+        y: y + 14,
         size: 9,
         font,
       }
     );
 
     page.drawText(
-      `Rs ${total.toFixed(2)}`,
+      `Rs ${total.toFixed(
+        2
+      )}`,
       {
-        x: 490,
-        y,
+        x: 500,
+        y: y + 14,
         size: 9,
         font,
       }
     );
 
-    /* ======================================== */
-    /* ➖ LINE */
-    /* ======================================== */
+    /* ============================= */
+    /* MARKETPLACE BREAKDOWN */
+    /* ============================= */
+
+    const platformMargin =
+      Number(
+        variant?.platform_margin ||
+          0
+      );
+
+    const sellerProfit =
+      Number(
+        variant?.seller_profit ||
+          0
+      );
+
+    const costPrice =
+      Number(
+        variant?.cost_price ||
+          0
+      );
+
+    y -= 14;
+
+    page.drawText(
+      `Cost: Rs ${costPrice} | Platform Fee: Rs ${platformMargin} | Seller Profit: Rs ${sellerProfit}`,
+      {
+        x: 45,
+        y,
+        size: 8,
+        font,
+        color: gray,
+      }
+    );
+
+    /* ============================= */
+    /* LINE */
+    /* ============================= */
+
+    y -= 14;
 
     page.drawLine({
       start: {
-        x: 40,
-        y: y - 6,
+        x: 35,
+        y,
       },
       end: {
-        x: 580,
-        y: y - 6,
+        x: 615,
+        y,
       },
-      thickness: 0.5,
+      thickness: 0.6,
       color: lightGray,
     });
 
-    y -= 22;
+    y -= 18;
   }
 
-  /* ======================================== */
-  /* 💰 SUMMARY */
-  /* ======================================== */
-
-  y -= 25;
+  /* =======================================================
+     💰 SUMMARY
+  ======================================================= */
 
   const {
     totalGST,
+
     totalTaxable,
+
+    totalPlatformFee = 0,
+
+    totalSellerProfit = 0,
+
     cgst = 0,
+
     sgst = 0,
+
     igst = 0,
+
     grandTotal,
   } = summary;
+
+  page.drawRectangle({
+    x: 330,
+    y: y - 120,
+    width: 285,
+    height: 120,
+    borderWidth: 1,
+    borderColor:
+      borderGray,
+  });
+
+  y -= 20;
 
   page.drawText(
     `Taxable Amount: Rs ${totalTaxable.toFixed(
       2
     )}`,
     {
-      x: 340,
+      x: 345,
       y,
       size: 10,
       font,
@@ -552,9 +701,11 @@ export async function generateInvoicePDF(
 
   if (cgst > 0) {
     page.drawText(
-      `CGST: Rs ${cgst.toFixed(2)}`,
+      `CGST: Rs ${cgst.toFixed(
+        2
+      )}`,
       {
-        x: 340,
+        x: 345,
         y,
         size: 10,
         font,
@@ -564,9 +715,11 @@ export async function generateInvoicePDF(
     y -= 18;
 
     page.drawText(
-      `SGST: Rs ${sgst.toFixed(2)}`,
+      `SGST: Rs ${sgst.toFixed(
+        2
+      )}`,
       {
-        x: 340,
+        x: 345,
         y,
         size: 10,
         font,
@@ -574,9 +727,11 @@ export async function generateInvoicePDF(
     );
   } else {
     page.drawText(
-      `IGST: Rs ${igst.toFixed(2)}`,
+      `IGST: Rs ${igst.toFixed(
+        2
+      )}`,
       {
-        x: 340,
+        x: 345,
         y,
         size: 10,
         font,
@@ -584,15 +739,43 @@ export async function generateInvoicePDF(
     );
   }
 
-  y -= 24;
+  y -= 18;
+
+  page.drawText(
+    `Platform Fee: Rs ${totalPlatformFee.toFixed(
+      2
+    )}`,
+    {
+      x: 345,
+      y,
+      size: 10,
+      font,
+    }
+  );
+
+  y -= 18;
+
+  page.drawText(
+    `Seller Earnings: Rs ${totalSellerProfit.toFixed(
+      2
+    )}`,
+    {
+      x: 345,
+      y,
+      size: 10,
+      font,
+    }
+  );
+
+  y -= 22;
 
   page.drawLine({
     start: {
-      x: 330,
+      x: 340,
       y,
     },
     end: {
-      x: 580,
+      x: 600,
       y,
     },
     thickness: 1,
@@ -606,18 +789,18 @@ export async function generateInvoicePDF(
       2
     )}`,
     {
-      x: 340,
+      x: 345,
       y,
-      size: 13,
+      size: 14,
       font: bold,
     }
   );
 
-  /* ======================================== */
-  /* ✍ FOOTER */
-  /* ======================================== */
+  /* =======================================================
+     ✍ FOOTER
+  ======================================================= */
 
-  y -= 60;
+  y -= 70;
 
   page.drawText(
     "This is a computer generated invoice.",
@@ -643,21 +826,21 @@ export async function generateInvoicePDF(
     }
   );
 
-  y -= 40;
+  y -= 35;
 
   page.drawText(
     "Authorized Signature",
     {
-      x: 430,
+      x: 450,
       y,
       size: 10,
       font: bold,
     }
   );
 
-  /* ======================================== */
-  /* 💾 SAVE PDF */
-  /* ======================================== */
+  /* =======================================================
+     💾 SAVE PDF
+  ======================================================= */
 
   return await pdfDoc.save();
 }

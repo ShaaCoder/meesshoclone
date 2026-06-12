@@ -101,17 +101,9 @@ export async function createPickupLocation(
     const token =
       await getShiprocketToken();
 
-    /* ============================= */
-    /* 🧠 PICKUP NAME */
-    /* ============================= */
-
     const pickupName =
       seller.shiprocket_pickup_name ||
       `SELLER-${seller.id.slice(0, 8)}`;
-
-    /* ============================= */
-    /* 📦 PAYLOAD */
-    /* ============================= */
 
     const payload = {
       pickup_location:
@@ -179,10 +171,6 @@ export async function createPickupLocation(
       data
     );
 
-    /* ============================= */
-    /* ✅ ALREADY EXISTS */
-    /* ============================= */
-
     if (
       data?.message?.includes(
         "already exists"
@@ -190,10 +178,6 @@ export async function createPickupLocation(
     ) {
       return pickupName;
     }
-
-    /* ============================= */
-    /* ❌ ERROR */
-    /* ============================= */
 
     if (!res.ok) {
       throw new Error(
@@ -239,6 +223,37 @@ export async function createShipment(
     } = payload;
 
     /* ============================= */
+    /* 🧪 DEV MODE */
+    /* ============================= */
+
+    if (
+      process.env
+        .SHIPROCKET_DEV_MODE ===
+      "true"
+    ) {
+      console.log(
+        "🧪 SHIPROCKET DEV MODE ENABLED"
+      );
+
+      const timestamp =
+        Date.now();
+
+      return {
+        shipment_id:
+          `DEV-SHIP-${timestamp}`,
+
+        awb_code:
+          `DEV-AWB-${timestamp}`,
+
+        courier_name:
+          "Development Courier",
+
+        tracking_url:
+          `https://example.com/tracking/dev-${timestamp}`,
+      };
+    }
+
+    /* ============================= */
     /* 🔐 TOKEN */
     /* ============================= */
 
@@ -252,7 +267,7 @@ export async function createShipment(
     }
 
     /* ============================= */
-    /* 🧠 VALIDATE */
+    /* 🧠 VALIDATION */
     /* ============================= */
 
     if (
@@ -332,7 +347,7 @@ export async function createShipment(
       }));
 
     /* ============================= */
-    /* 📦 PACKAGE SIZE */
+    /* 📦 PACKAGE */
     /* ============================= */
 
     const totalWeight =
@@ -342,7 +357,7 @@ export async function createShipment(
       );
 
     /* ============================= */
-    /* 🚚 SHIPROCKET PAYLOAD */
+    /* 🚚 SHIPMENT PAYLOAD */
     /* ============================= */
 
     const shipmentPayload = {
@@ -355,21 +370,33 @@ export async function createShipment(
       pickup_location:
         pickupLocation,
 
+      channel_id: "",
+
+      comment:
+        "Marketplace Order",
+
+      reseller_name:
+        "Marketplace",
+
+      company_name:
+        seller?.business_name ||
+        seller?.name,
+
       /* ============================= */
-      /* 👤 CUSTOMER */
+      /* 👤 BILLING */
       /* ============================= */
 
       billing_customer_name:
         fullName,
 
-      billing_first_name:
-        firstName,
-
       billing_last_name:
-        lastName,
+        "",
 
       billing_address:
         address.address_line,
+
+      billing_address_2:
+        "",
 
       billing_city: String(
         address.city
@@ -418,6 +445,14 @@ export async function createShipment(
           ? "COD"
           : "Prepaid",
 
+      shipping_charges: 0,
+
+      giftwrap_charges: 0,
+
+      transaction_charges: 0,
+
+      total_discount: 0,
+
       sub_total: Number(
         order.total_amount || 0
       ),
@@ -427,8 +462,11 @@ export async function createShipment(
       /* ============================= */
 
       length: 10,
+
       breadth: 10,
+
       height: 10,
+
       weight: totalWeight,
     };
 
@@ -438,7 +476,7 @@ export async function createShipment(
     );
 
     /* ============================= */
-    /* 📡 API CALL */
+    /* 📡 CREATE SHIPMENT */
     /* ============================= */
 
     const res = await fetch(
@@ -466,10 +504,6 @@ export async function createShipment(
       data
     );
 
-    /* ============================= */
-    /* ❌ ERROR */
-    /* ============================= */
-
     if (
       !res.ok ||
       data?.status === false ||
@@ -485,12 +519,11 @@ export async function createShipment(
     }
 
     /* ============================= */
-    /* ✅ SHIPMENT ID */
+    /* 📦 SHIPMENT ID */
     /* ============================= */
 
     const shipmentId =
       data?.shipment_id ||
-      data?.shipment_id?.[0] ||
       data?.shipment_details
         ?.shipment_id;
 
@@ -517,6 +550,36 @@ export async function createShipment(
         err
       );
     }
+
+    /* ============================= */
+    /* 💾 SAVE SHIPMENT */
+    /* ============================= */
+
+    await supabaseAdmin
+      .from("shipments")
+      .insert({
+        order_id: order.id,
+
+        seller_id:
+          order.seller_id,
+
+        shipment_id:
+          String(shipmentId),
+
+        awb_code:
+          courier?.awb_code ||
+          null,
+
+        courier_name:
+          courier?.courier_name ||
+          null,
+
+        tracking_url:
+          courier?.tracking_url ||
+          null,
+
+        status: "created",
+      });
 
     /* ============================= */
     /* ✅ SUCCESS */
@@ -555,15 +618,10 @@ export async function createShipment(
 /* 🚛 ASSIGN COURIER */
 /* ============================= */
 
-/* ============================= */
-/* 🚛 ASSIGN COURIER */
-/* ============================= */
-
 export async function assignCourier(
   shipmentId: number
 ) {
   try {
-
     const token =
       await getShiprocketToken();
 
@@ -572,10 +630,6 @@ export async function assignCourier(
         "Shipment ID missing"
       );
     }
-
-    /* ============================= */
-    /* 📡 ASSIGN AWB */
-    /* ============================= */
 
     const res = await fetch(
       `${BASE_URL}/courier/assign/awb`,
@@ -605,15 +659,10 @@ export async function assignCourier(
       data
     );
 
-    /* ============================= */
-    /* ✅ REAL AWB SUCCESS */
-    /* ============================= */
-
     if (
       res.ok &&
       data?.awb_code
     ) {
-
       return {
         awb_code:
           data.awb_code,
@@ -625,11 +674,6 @@ export async function assignCourier(
           `https://shiprocket.co/tracking/${data.awb_code}`,
       };
     }
-
-    /* ============================= */
-    /* ⚠️ WALLET / COURIER FAILURE */
-    /* USE FAKE FALLBACK */
-    /* ============================= */
 
     console.log(
       "USING FAKE COURIER DATA"
@@ -645,17 +689,11 @@ export async function assignCourier(
       tracking_url:
         `https://shiprocket.co/tracking/demo-${shipmentId}`,
     };
-
   } catch (error: any) {
-
     console.error(
       "ASSIGN COURIER ERROR:",
       error
     );
-
-    /* ============================= */
-    /* ⚠️ FULL FAILSAFE */
-    /* ============================= */
 
     return {
       awb_code:
@@ -693,6 +731,7 @@ export async function getSellerPickupAddress(
 
   return data;
 }
+
 /* ============================= */
 /* 🔁 CREATE RETURN SHIPMENT */
 /* ============================= */
@@ -720,6 +759,33 @@ export async function createReturnShipment(
     } = payload;
 
     /* ============================= */
+    /* 🧪 DEV MODE */
+    /* ============================= */
+
+    if (
+      process.env
+        .SHIPROCKET_DEV_MODE ===
+      "true"
+    ) {
+      const timestamp =
+        Date.now();
+
+      return {
+        shipment_id:
+          `DEV-RETURN-${timestamp}`,
+
+        awb_code:
+          `DEV-RETURN-AWB-${timestamp}`,
+
+        courier_name:
+          "Development Return Courier",
+
+        tracking_url:
+          `https://example.com/returns/${timestamp}`,
+      };
+    }
+
+    /* ============================= */
     /* 🔐 TOKEN */
     /* ============================= */
 
@@ -733,36 +799,7 @@ export async function createReturnShipment(
     }
 
     /* ============================= */
-    /* 🧠 VALIDATE SELLER ADDRESS */
-    /* ============================= */
-
-    if (
-      !sellerAddress
-    ) {
-      throw new Error(
-        "Seller address missing"
-      );
-    }
-
-    if (
-      !sellerAddress
-        .address_line ||
-      !sellerAddress.city ||
-      !sellerAddress.state ||
-      !sellerAddress.pincode
-    ) {
-      console.log(
-        "INVALID SELLER ADDRESS",
-        sellerAddress
-      );
-
-      throw new Error(
-        "Incomplete seller pickup address"
-      );
-    }
-
-    /* ============================= */
-    /* 🏭 CREATE PICKUP LOCATION */
+    /* 🏭 PICKUP LOCATION */
     /* ============================= */
 
     const pickupLocation =
@@ -804,7 +841,7 @@ export async function createReturnShipment(
         .join(" ") || "User";
 
     /* ============================= */
-    /* 📦 RETURN SHIPMENT PAYLOAD */
+    /* 📦 RETURN PAYLOAD */
     /* ============================= */
 
     const shipmentPayload = {
@@ -817,17 +854,11 @@ export async function createReturnShipment(
       pickup_location:
         pickupLocation,
 
-      /* ============================= */
-      /* 📍 PICKUP = CUSTOMER */
-      /* ============================= */
-
       pickup_customer_name:
         `${firstName} ${lastName}`,
 
       pickup_address:
         customerAddress.address_line,
-
-      pickup_address_2: "",
 
       pickup_city: String(
         customerAddress.city
@@ -853,19 +884,12 @@ export async function createReturnShipment(
       pickup_email:
         customer.email,
 
-      /* ============================= */
-      /* 📍 DELIVERY = SELLER */
-      /* ============================= */
-
       shipping_customer_name:
         seller.contact_person ||
         seller.name,
 
       shipping_address:
         sellerAddress.address_line,
-
-      shipping_address_2:
-        "",
 
       shipping_city: String(
         sellerAddress.city
@@ -891,10 +915,6 @@ export async function createReturnShipment(
       shipping_email:
         seller.email,
 
-      /* ============================= */
-      /* 📦 ITEMS */
-      /* ============================= */
-
       order_items: [
         {
           name:
@@ -915,20 +935,12 @@ export async function createReturnShipment(
         },
       ],
 
-      /* ============================= */
-      /* 💳 PAYMENT */
-      /* ============================= */
-
       payment_method:
         "Prepaid",
 
       sub_total: Number(
         orderItem.final_price || 0
       ),
-
-      /* ============================= */
-      /* 📐 PACKAGE */
-      /* ============================= */
 
       length: 10,
       breadth: 10,
@@ -940,10 +952,6 @@ export async function createReturnShipment(
       "RETURN SHIPMENT PAYLOAD:",
       shipmentPayload
     );
-
-    /* ============================= */
-    /* 📡 CREATE RETURN SHIPMENT */
-    /* ============================= */
 
     const res = await fetch(
       `${BASE_URL}/orders/create/return`,
@@ -971,10 +979,6 @@ export async function createReturnShipment(
       data
     );
 
-    /* ============================= */
-    /* ❌ ERROR */
-    /* ============================= */
-
     if (
       !res.ok ||
       data?.status === false ||
@@ -989,13 +993,8 @@ export async function createReturnShipment(
       );
     }
 
-    /* ============================= */
-    /* 📦 SHIPMENT ID */
-    /* ============================= */
-
     const shipmentId =
       data?.shipment_id ||
-      data?.shipment_id?.[0] ||
       data?.shipment_details
         ?.shipment_id;
 
@@ -1005,30 +1004,19 @@ export async function createReturnShipment(
       );
     }
 
-    /* ============================= */
-    /* 🚛 ASSIGN COURIER */
-    /* ============================= */
-
     let courier: any = null;
 
     try {
-
       courier =
         await assignCourier(
           shipmentId
         );
-
     } catch (err) {
-
       console.error(
         "RETURN COURIER ERROR:",
         err
       );
     }
-
-    /* ============================= */
-    /* ✅ SUCCESS */
-    /* ============================= */
 
     return {
       shipment_id:
@@ -1046,9 +1034,7 @@ export async function createReturnShipment(
         courier?.tracking_url ||
         null,
     };
-
   } catch (error: any) {
-
     console.error(
       "RETURN SHIPMENT ERROR:",
       error

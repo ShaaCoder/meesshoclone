@@ -85,17 +85,23 @@ export default async function AdminReturnsPage() {
 ),
 
         order_items (
-          quantity,
-          final_price,
-          product_name,
+  quantity,
+  final_price,
+  product_name,
 
-          products (
-            product_images (
-              url,
-              is_primary
-            )
-          )
-        )
+  product_variants (
+    color,
+    size
+  ),
+
+  products (
+    product_images (
+      url,
+      color,
+      is_primary
+    )
+  )
+)
       `)
       .order("created_at", {
         ascending: false,
@@ -133,228 +139,299 @@ export default async function AdminReturnsPage() {
   /* STATUS UI */
   /* ============================= */
 
-  const getStatusUI = (
-    item: any
-  ) => {
+const getStatusUI = (
+  item: any
+) => {
 
-    /* ============================= */
-    /* QC FAILED */
-    /* ============================= */
+  /* ============================= */
+  /* QC FAILED */
+  /* ============================= */
 
-    if (
-      item.qc_status ===
-      "failed"
-    ) {
-      return {
-        icon: XCircle,
-
-        label:
-          "QC Failed",
-
-        class:
-          "bg-red-500/10 text-red-400 border-red-500/20",
-
-        description:
-          "Returned product failed quality inspection.",
-      };
-    }
-
-    /* ============================= */
-    /* REJECTED */
-    /* ============================= */
-
-    if (
-      item.status ===
-      "rejected"
-    ) {
-      return {
-        icon: XCircle,
-
-        label:
-          "Return Rejected",
-
-        class:
-          "bg-red-500/10 text-red-400 border-red-500/20",
-
-        description:
-          "Marketplace rejected this return request.",
-      };
-    }
-
-    /* ============================= */
-    /* COMPLETED */
-    /* ============================= */
-
-    if (
-      item.status ===
-      "completed"
-    ) {
-      return {
-        icon: CheckCircle2,
-
-        label:
-          "Refund Completed",
-
-        class:
-          "bg-green-500/10 text-green-400 border-green-500/20",
-
-        description:
-          "Refund processed successfully and return lifecycle completed.",
-      };
-    }
-
-    /* ============================= */
-    /* QC PASSED */
-    /* ============================= */
-
-    if (
-      item.qc_status ===
-      "passed"
-    ) {
-      return {
-        icon: CheckCircle2,
-
-        label:
-          "QC Passed",
-
-        class:
-          "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-
-        description:
-          "Product passed quality inspection and refund is ready.",
-      };
-    }
-
-    /* ============================= */
-    /* DELIVERED */
-    /* ============================= */
-
-    if (
-      item.pickup_status ===
-        "delivered_to_seller" &&
-      item.qc_status ===
-        "pending"
-    ) {
-      return {
-        icon: Package,
-
-        label:
-          "Delivered To Seller",
-
-        class:
-          "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-
-        description:
-          "Returned product reached seller warehouse and is awaiting QC.",
-      };
-    }
-
-    /* ============================= */
-    /* IN TRANSIT */
-    /* ============================= */
-
-    if (
-      item.pickup_status ===
-      "in_transit"
-    ) {
-      return {
-        icon: Truck,
-
-        label:
-          "Return In Transit",
-
-        class:
-          "bg-purple-500/10 text-purple-400 border-purple-500/20",
-
-        description:
-          "Courier partner is transporting the returned item back to seller.",
-      };
-    }
-
-    /* ============================= */
-    /* PICKED UP */
-    /* ============================= */
-
-    if (
-      item.pickup_status ===
-      "picked_up"
-    ) {
-      return {
-        icon: Truck,
-
-        label:
-          "Picked Up",
-
-        class:
-          "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
-
-        description:
-          "Courier partner picked up the return package from customer.",
-      };
-    }
-
-    /* ============================= */
-    /* PICKUP SCHEDULED */
-    /* ============================= */
-
-    if (
-      item.pickup_status ===
-      "pickup_scheduled"
-    ) {
-      return {
-        icon: RotateCcw,
-
-        label:
-          "Pickup Scheduled",
-
-        class:
-          "bg-blue-500/10 text-blue-400 border-blue-500/20",
-
-        description:
-          "Reverse pickup scheduled with logistics partner.",
-      };
-    }
-
-    /* ============================= */
-    /* APPROVED */
-    /* ============================= */
-
-    if (
-      item.status ===
-      "approved"
-    ) {
-      return {
-        icon: CheckCircle2,
-
-        label:
-          "Approved",
-
-        class:
-          "bg-blue-500/10 text-blue-400 border-blue-500/20",
-
-        description:
-          "Return approved and reverse logistics initiated.",
-      };
-    }
-
-    /* ============================= */
-    /* REQUESTED */
-    /* ============================= */
-
+  if (
+    item.qc_status ===
+    "failed"
+  ) {
     return {
-      icon: Clock3,
+      icon: XCircle,
 
       label:
-        "Pending Review",
+        "QC Failed",
 
       class:
-        "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+        "bg-red-500/10 text-red-400 border-red-500/20",
 
       description:
-        "Customer submitted return request awaiting admin review.",
+        "Returned product failed quality inspection.",
     };
-  };
+  }
 
+  /* ============================= */
+  /* REJECTED */
+  /* ============================= */
+
+  if (
+    item.status ===
+    "rejected"
+  ) {
+    return {
+      icon: XCircle,
+
+      label:
+        "Return Rejected",
+
+      class:
+        "bg-red-500/10 text-red-400 border-red-500/20",
+
+      description:
+        "Marketplace rejected this return request.",
+    };
+  }
+
+  /* ============================= */
+  /* COMPLETED */
+  /* ============================= */
+
+  if (
+    item.status ===
+    "completed"
+  ) {
+    return {
+      icon:
+        CheckCircle2,
+
+      label:
+        "Refund Completed",
+
+      class:
+        "bg-green-500/10 text-green-400 border-green-500/20",
+
+      description:
+        "Refund processed successfully and return lifecycle completed.",
+    };
+  }
+
+  /* ============================= */
+  /* QC PASSED */
+  /* ============================= */
+
+  if (
+    item.qc_status ===
+    "passed"
+  ) {
+    return {
+      icon:
+        CheckCircle2,
+
+      label:
+        "QC Passed",
+
+      class:
+        "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+
+      description:
+        "Product passed quality inspection and refund is ready.",
+    };
+  }
+
+  /* ============================= */
+  /* DELIVERED TO SELLER */
+  /* ============================= */
+
+  if (
+    item.pickup_status ===
+      "delivered_to_seller" &&
+    item.qc_status ===
+      "pending"
+  ) {
+    return {
+      icon: Package,
+
+      label:
+        "Delivered To Seller",
+
+      class:
+        "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+
+      description:
+        "Returned product reached seller warehouse and is awaiting QC.",
+    };
+  }
+
+  /* ============================= */
+  /* IN TRANSIT */
+  /* ============================= */
+
+  if (
+    item.pickup_status ===
+    "in_transit"
+  ) {
+    return {
+      icon: Truck,
+
+      label:
+        "Return In Transit",
+
+      class:
+        "bg-purple-500/10 text-purple-400 border-purple-500/20",
+
+      description:
+        "Courier partner is transporting the returned item back to seller.",
+    };
+  }
+
+  /* ============================= */
+  /* PICKED UP */
+  /* ============================= */
+
+  if (
+    item.pickup_status ===
+    "picked_up"
+  ) {
+    return {
+      icon: Truck,
+
+      label:
+        "Picked Up",
+
+      class:
+        "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+
+      description:
+        "Courier partner picked up the return package from customer.",
+    };
+  }
+
+  /* ============================= */
+  /* PICKUP SCHEDULED */
+  /* ============================= */
+
+  if (
+    item.pickup_status ===
+    "pickup_scheduled"
+  ) {
+    return {
+      icon:
+        RotateCcw,
+
+      label:
+        "Pickup Scheduled",
+
+      class:
+        "bg-blue-500/10 text-blue-400 border-blue-500/20",
+
+      description:
+        "Reverse pickup scheduled with logistics partner.",
+    };
+  }
+
+  /* ============================= */
+  /* APPROVED */
+  /* ============================= */
+
+  if (
+    item.status ===
+    "approved"
+  ) {
+    return {
+      icon:
+        CheckCircle2,
+
+      label:
+        "Approved",
+
+      class:
+        "bg-blue-500/10 text-blue-400 border-blue-500/20",
+
+      description:
+        "Return approved and reverse logistics initiated.",
+    };
+  }
+
+  /* ============================= */
+  /* REQUESTED */
+  /* ============================= */
+
+  return {
+    icon: Clock3,
+
+    label:
+      "Pending Review",
+
+    class:
+      "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+
+    description:
+      "Customer submitted return request awaiting admin review.",
+  };
+};
+function getVariantImage(
+  item: any
+) {
+
+  const variantColor =
+    item.order_items
+      ?.product_variants
+      ?.color;
+
+  const images =
+    item.order_items
+      ?.products
+      ?.product_images || [];
+
+  /* ============================= */
+  /* 🎨 COLOR MATCH */
+  /* ============================= */
+
+  if (variantColor) {
+
+    const matched =
+      images.find(
+        (img: any) => {
+
+          if (!img?.color) {
+            return false;
+          }
+
+          return (
+            String(
+              img.color
+            ).toLowerCase() ===
+            String(
+              variantColor
+            ).toLowerCase()
+          );
+        }
+      );
+
+    if (matched?.url) {
+      return matched.url;
+    }
+  }
+
+  /* ============================= */
+  /* ⭐ PRIMARY */
+  /* ============================= */
+
+  const primary =
+    images.find(
+      (img: any) =>
+        img.is_primary
+    );
+
+  if (primary?.url) {
+    return primary.url;
+  }
+
+  /* ============================= */
+  /* 📦 FIRST */
+  /* ============================= */
+
+  if (images?.[0]?.url) {
+    return images[0].url;
+  }
+
+  return "/placeholder.png";
+}
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
 
@@ -433,16 +510,8 @@ export default async function AdminReturnsPage() {
             const StatusIcon =
               statusUI.icon;
 
-            const image =
-              item.order_items?.products?.product_images?.find(
-                (i: any) =>
-                  i.is_primary
-              )?.url ||
-              item.order_items
-                ?.products
-                ?.product_images?.[0]
-                ?.url ||
-              "/placeholder.png";
+        const image =
+  getVariantImage(item);
               const refundAccount =
   item.users
     ?.customer_refund_accounts?.find(

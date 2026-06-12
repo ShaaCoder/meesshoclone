@@ -1,180 +1,652 @@
 import { getSupabaseServer } from "@/lib/supabase-server";
+
 import { redirect } from "next/navigation";
+
+import Link from "next/link";
+
 import CartItem from "@/components/CartItem";
+
 import CheckoutForm from "@/components/CheckoutForm";
-import { ArrowLeft, ShoppingCart } from "lucide-react";
 
-/* ============================= */
-/* 🧠 PRICE UTIL (SAME LOGIC) */
-/* ============================= */
-function getPrice(variant: any) {
-  if (!variant) return 0;
+import {
+  ArrowLeft,
+  ShoppingCart,
+  ShieldCheck,
+  Truck,
+} from "lucide-react";
 
-  if (Number(variant.selling_price) > 0) return Number(variant.selling_price);
+/* =========================================================
+   🧠 PRICE ENGINE
+========================================================= */
+
+function getPrice(
+  variant: any
+) {
+
+  if (!variant) {
+    return 0;
+  }
+
+  /* ============================= */
+  /* ✅ SELLING PRICE */
+  /* ============================= */
+
+  if (
+    Number(
+      variant.selling_price
+    ) > 0
+  ) {
+
+    return Number(
+      variant.selling_price
+    );
+  }
+
+  /* ============================= */
+  /* 🔥 FALLBACK */
+  /* ============================= */
 
   const fallback =
-    Number(variant.cost_price || 0) +
-    Number(variant.platform_margin || 0);
+    Number(
+      variant.cost_price ||
+        0
+    ) +
+    Number(
+      variant.platform_margin ||
+        0
+    );
 
-  if (fallback > 0) return fallback;
+  if (fallback > 0) {
 
-  if (Number(variant.mrp) > 0) return Number(variant.mrp);
+    return fallback;
+  }
+
+  /* ============================= */
+  /* 💰 LAST MRP */
+  /* ============================= */
+
+  if (
+    Number(
+      variant.mrp
+    ) > 0
+  ) {
+
+    return Number(
+      variant.mrp
+    );
+  }
 
   return 0;
 }
 
+/* =========================================================
+   🖼 GET VARIANT IMAGE
+========================================================= */
+
+function getVariantImage(
+  product: any,
+  variant: any
+) {
+
+  const images =
+    product?.product_images ||
+    [];
+
+  /* ============================= */
+  /* 🎨 GET VARIANT COLOR */
+  /* ============================= */
+
+  const variantColor =
+    variant?.color
+      ? String(
+          variant.color
+        ).toLowerCase()
+      : variant?.attributes
+          ?.color
+      ? String(
+          variant.attributes
+            .color
+        ).toLowerCase()
+      : null;
+
+  /* ============================= */
+  /* 🎨 MATCH COLOR IMAGE */
+  /* ============================= */
+
+  if (
+    variantColor
+  ) {
+
+    const matched =
+      images.find(
+        (img: any) => {
+
+          if (
+            !img?.color
+          ) {
+            return false;
+          }
+
+          return (
+            String(
+              img.color
+            ).toLowerCase() ===
+            variantColor
+          );
+        }
+      );
+
+    if (
+      matched?.url
+    ) {
+
+      return matched.url;
+    }
+  }
+
+  /* ============================= */
+  /* ⭐ PRIMARY */
+  /* ============================= */
+
+  const primary =
+    images.find(
+      (img: any) =>
+        img.is_primary
+    );
+
+  if (
+    primary?.url
+  ) {
+
+    return primary.url;
+  }
+
+  /* ============================= */
+  /* 📦 FIRST */
+  /* ============================= */
+
+  if (
+    images?.[0]?.url
+  ) {
+
+    return images[0].url;
+  }
+
+  return "/placeholder.svg";
+}
+
+/* =========================================================
+   📦 PAGE
+========================================================= */
+
 export default async function CartPage() {
-  const supabase = await getSupabaseServer();
+
+  const supabase =
+    await getSupabaseServer();
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return redirect("/login");
+  } =
+    await supabase.auth.getUser();
 
   /* ============================= */
-  /* 📦 FETCH CART */
+  /* 🔐 AUTH */
   /* ============================= */
-  const { data: cart, error: cartError } = await supabase
+
+  if (!user) {
+
+    return redirect(
+      "/login"
+    );
+  }
+
+  /* =========================================================
+     🛒 FETCH CART
+  ========================================================= */
+
+  const {
+    data: cart,
+    error: cartError,
+  } = await supabase
     .from("cart")
     .select(`
       id,
       quantity,
+      created_at,
+
       products:product_id (
         id,
         name,
-        categories ( gst_percent ),
-        product_images ( url, is_primary )
+        slug,
+
+        categories (
+          gst_percent
+        ),
+
+        product_images (
+          url,
+          color,
+          is_primary
+        )
       ),
+
       product_variants:variant_id (
         id,
+
+        size,
+        color,
+
+        attributes,
+
+        stock,
+        reserved_stock,
+
         selling_price,
+        seller_price,
+        seller_profit,
+
         cost_price,
         platform_margin,
+
         mrp
       )
     `)
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+    .eq(
+      "user_id",
+      user.id
+    )
+    .order(
+      "created_at",
+      {
+        ascending: false,
+      }
+    );
 
-  const { data: addresses } = await supabase
+  /* =========================================================
+     📍 ADDRESSES
+  ========================================================= */
+
+  const {
+    data: addresses,
+  } = await supabase
     .from("addresses")
     .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+    .eq(
+      "user_id",
+      user.id
+    )
+    .order(
+      "created_at",
+      {
+        ascending: false,
+      }
+    );
+
+  /* =========================================================
+     ❌ ERROR
+  ========================================================= */
 
   if (cartError) {
+
+    console.error(
+      "CART ERROR:",
+      cartError
+    );
+
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-zinc-50">
+
         <div className="max-w-3xl mx-auto px-4 py-16">
-          <div className="bg-white border rounded-2xl p-6">
-            <h2 className="text-lg font-semibold">Cart unavailable</h2>
-            <p className="text-sm text-gray-600 mt-2">
-              {cartError.message}
+
+          <div className="bg-white border rounded-3xl p-8 shadow-sm">
+
+            <h2 className="text-xl font-bold text-red-500">
+              Cart unavailable
+            </h2>
+
+            <p className="text-sm text-zinc-600 mt-3">
+              {
+                cartError.message
+              }
             </p>
-            <p className="text-xs text-gray-500 mt-3">
-              This usually means the `cart` table is missing in Supabase or RLS is blocking access.
+
+            <p className="text-xs text-zinc-500 mt-4">
+              Check Supabase table structure or RLS policies.
             </p>
+
           </div>
         </div>
       </div>
     );
   }
 
-  const safeCart = cart || [];
+  /* =========================================================
+     🧠 NORMALIZE CART
+  ========================================================= */
 
-  /* ============================= */
-  /* 💰 TOTAL */
-  /* ============================= */
+  const safeCart =
+    (cart || []).map(
+      (item: any) => {
+
+        const product =
+          Array.isArray(
+            item.products
+          )
+            ? item.products[0]
+            : item.products;
+
+        const variant =
+          Array.isArray(
+            item.product_variants
+          )
+            ? item
+                .product_variants[0]
+            : item.product_variants;
+
+        return {
+          ...item,
+
+          products:
+            product,
+
+          product_variants:
+            variant,
+
+          variantImage:
+            getVariantImage(
+              product,
+              variant
+            ),
+        };
+      }
+    );
+
+  /* =========================================================
+     💰 TOTALS
+  ========================================================= */
+
   let subtotal = 0;
+
   let totalGst = 0;
 
-  safeCart.forEach((item: any) => {
-    const variant = Array.isArray(item.product_variants)
-      ? item.product_variants[0]
-      : item.product_variants;
-    
-    const product = Array.isArray(item.products) ? item.products[0] : item.products;
-    const category = Array.isArray(product?.categories) ? product.categories[0] : product?.categories;
-    const gstPercent = Number(category?.gst_percent || 18);
+  let totalItems = 0;
 
-    const price = getPrice(variant);
-    const gstAmount = Math.round(((price * gstPercent) / 100) * item.quantity);
+  safeCart.forEach(
+    (item: any) => {
 
-    subtotal += price * item.quantity;
-    totalGst += gstAmount;
-  });
+      const variant =
+        item.product_variants;
 
-  const total = subtotal + totalGst;
+      const product =
+        item.products;
 
-  /* ============================= */
-  /* 🧾 UI */
-  /* ============================= */
+      const category =
+        Array.isArray(
+          product?.categories
+        )
+          ? product
+              .categories[0]
+          : product?.categories;
+
+      const gstPercent =
+        Number(
+          category?.gst_percent ||
+            18
+        );
+
+      const price =
+        getPrice(
+          variant
+        );
+
+      const quantity =
+        Number(
+          item.quantity ||
+            1
+        );
+
+      const itemTotal =
+        price *
+        quantity;
+
+      const gstAmount =
+        Math.round(
+          (
+            (itemTotal *
+              gstPercent) /
+            100
+          )
+        );
+
+      subtotal +=
+        itemTotal;
+
+      totalGst +=
+        gstAmount;
+
+      totalItems +=
+        quantity;
+    }
+  );
+
+  const shipping =
+    0;
+
+  const total =
+    subtotal +
+    totalGst +
+    shipping;
+
+  /* =========================================================
+     🚀 UI
+  ========================================================= */
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-zinc-50">
+
       <div className="max-w-7xl mx-auto px-4 py-8">
 
-        {/* HEADER */}
-        <div className="flex justify-between mb-10">
-          <a href="/" className="flex items-center gap-2 text-gray-600">
-            <ArrowLeft className="w-5 h-5" />
-            Continue Shopping
-          </a>
+        {/* =========================================================
+           🔝 HEADER
+        ========================================================= */}
 
-          <div className="flex items-center gap-2">
-            <ShoppingCart />
-            <h1 className="text-2xl font-bold">Your Cart</h1>
+        <div className="flex items-center justify-between mb-10">
+
+          <Link
+            href="/"
+            className="flex items-center gap-2 text-zinc-600 hover:text-black transition"
+          >
+
+            <ArrowLeft className="w-5 h-5" />
+
+            <span className="font-medium">
+              Continue Shopping
+            </span>
+
+          </Link>
+
+          <div className="flex items-center gap-3">
+
+            <ShoppingCart className="w-7 h-7" />
+
+            <h1 className="text-3xl font-bold">
+              Your Cart
+            </h1>
+
           </div>
 
           <div />
         </div>
 
-        {safeCart.length === 0 ? (
+        {/* =========================================================
+           🛒 EMPTY
+        ========================================================= */}
+
+        {safeCart.length ===
+        0 ? (
+
           <EmptyCart />
+
         ) : (
+
           <div className="grid lg:grid-cols-12 gap-10">
 
-            {/* ITEMS */}
-            <div className="lg:col-span-7 space-y-6">
-              {safeCart.map((item: any) => (
-                <CartItem key={item.id} item={item} />
-              ))}
+            {/* =========================================================
+               📦 LEFT
+            ========================================================= */}
+
+            <div className="lg:col-span-7 space-y-5">
+
+              {safeCart.map(
+                (
+                  item: any
+                ) => (
+
+                  <CartItem
+                    key={
+                      item.id
+                    }
+                    item={
+                      item
+                    }
+                  />
+                )
+              )}
+
             </div>
 
-            {/* SUMMARY */}
+            {/* =========================================================
+               💰 RIGHT
+            ========================================================= */}
+
             <div className="lg:col-span-5 space-y-6">
-              <div className="bg-white p-6 rounded-xl shadow border">
-                <h2 className="font-semibold mb-4">Order Summary</h2>
 
-                <div className="flex justify-between mb-2">
-                  <span>Subtotal</span>
-                  <span>₹{subtotal}</span>
+              {/* =========================================================
+                 💰 SUMMARY
+              ========================================================= */}
+
+              <div className="bg-white border rounded-3xl p-6 shadow-sm">
+
+                <h2 className="text-xl font-bold mb-6">
+                  Order Summary
+                </h2>
+
+                <div className="space-y-4">
+
+                  <div className="flex items-center justify-between text-zinc-600">
+
+                    <span>
+                      Items (
+                      {
+                        totalItems
+                      }
+                      )
+                    </span>
+
+                    <span>
+                      ₹
+                      {subtotal.toFixed(
+                        0
+                      )}
+                    </span>
+
+                  </div>
+
+                  <div className="flex items-center justify-between text-zinc-600">
+
+                    <span>
+                      GST / Taxes
+                    </span>
+
+                    <span>
+                      ₹
+                      {totalGst.toFixed(
+                        0
+                      )}
+                    </span>
+
+                  </div>
+
+                  <div className="flex items-center justify-between text-zinc-600">
+
+                    <span>
+                      Shipping
+                    </span>
+
+                    <span className="text-green-600 font-semibold">
+                      FREE
+                    </span>
+
+                  </div>
                 </div>
 
-                <div className="flex justify-between mb-2">
-                  <span>GST/Taxes</span>
-                  <span>₹{totalGst}</span>
+                <hr className="my-5" />
+
+                <div className="flex items-center justify-between">
+
+                  <span className="text-lg font-bold">
+                    Total
+                  </span>
+
+                  <span className="text-2xl font-bold">
+                    ₹
+                    {total.toFixed(
+                      0
+                    )}
+                  </span>
+
                 </div>
 
-                <div className="flex justify-between mb-2">
-                  <span>Shipping</span>
-                  <span className="text-green-600">FREE</span>
-                </div>
+                {/* =========================================================
+                   🔒 BADGES
+                ========================================================= */}
 
-                <hr className="my-3" />
+                <div className="mt-6 space-y-3">
 
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Total</span>
-                  <span>₹{total}</span>
+                  <div className="flex items-center gap-3 text-sm text-zinc-600">
+
+                    <ShieldCheck className="w-4 h-4 text-green-600" />
+
+                    <span>
+                      100% Secure Payments
+                    </span>
+
+                  </div>
+
+                  <div className="flex items-center gap-3 text-sm text-zinc-600">
+
+                    <Truck className="w-4 h-4 text-blue-600" />
+
+                    <span>
+                      Fast Delivery Across India
+                    </span>
+
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white p-6 rounded-xl shadow border">
-                <h2 className="font-semibold mb-4">Shipping Details</h2>
-                <CheckoutForm user={user} addresses={addresses || []} />
+              {/* =========================================================
+                 📍 CHECKOUT
+              ========================================================= */}
+
+              <div className="bg-white border rounded-3xl p-6 shadow-sm">
+
+                <h2 className="text-xl font-bold mb-5">
+                  Shipping Details
+                </h2>
+
+                <CheckoutForm
+                  user={
+                    user
+                  }
+                  addresses={
+                    addresses ||
+                    []
+                  }
+                />
+
               </div>
             </div>
-
           </div>
         )}
       </div>
@@ -182,16 +654,36 @@ export default async function CartPage() {
   );
 }
 
-/* ============================= */
-/* EMPTY */
-/* ============================= */
+/* =========================================================
+   🛒 EMPTY CART
+========================================================= */
+
 function EmptyCart() {
+
   return (
-    <div className="text-center py-20">
-      <h2 className="text-xl font-semibold">Your cart is empty</h2>
-      <a href="/" className="mt-4 inline-block bg-black text-white px-6 py-2 rounded">
-        Shop Now
-      </a>
+
+    <div className="bg-white rounded-3xl border shadow-sm p-16 text-center">
+
+      <div className="w-24 h-24 rounded-full bg-zinc-100 mx-auto flex items-center justify-center mb-6">
+
+        <ShoppingCart className="w-10 h-10 text-zinc-500" />
+
+      </div>
+
+      <h2 className="text-2xl font-bold">
+        Your cart is empty
+      </h2>
+
+      <p className="text-zinc-500 mt-3">
+        Looks like you haven't added anything yet.
+      </p>
+
+      <Link
+        href="/"
+        className="inline-flex items-center justify-center mt-8 bg-black text-white px-8 py-3 rounded-2xl font-medium hover:bg-zinc-900 transition"
+      >
+        Start Shopping
+      </Link>
     </div>
   );
 }

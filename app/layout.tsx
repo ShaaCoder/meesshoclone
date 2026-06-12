@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ShopSphere",
+  title: "YourShop",
   description: "Modern marketplace built with Next.js",
 };
 

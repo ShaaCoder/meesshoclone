@@ -2,26 +2,39 @@ import crypto from "crypto";
 
 import { NextResponse } from "next/server";
 
+import { revalidatePath } from "next/cache";
+
 import { getSupabaseServer } from "@/lib/supabase-server";
+
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-export async function POST(req: Request) {
+/* =======================================================
+   💳 VERIFY PAYMENT
+======================================================= */
+
+export async function POST(
+  req: Request
+) {
   try {
+
     const supabase =
       await getSupabaseServer();
 
     /* =======================================================
-       🔐 AUTH CHECK
+       🔐 AUTH
     ======================================================= */
 
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } =
+      await supabase.auth.getUser();
 
     if (!user) {
+
       return NextResponse.json(
         {
-          error: "Unauthorized",
+          error:
+            "Unauthorized",
         },
         {
           status: 401,
@@ -36,12 +49,33 @@ export async function POST(req: Request) {
     const body =
       await req.json();
 
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      orderId,
-    } = body;
+    console.log(
+      "VERIFY BODY:",
+      body
+    );
+
+    /* =======================================================
+       🔥 SUPPORT BOTH FORMATS
+    ======================================================= */
+
+    const razorpay_order_id =
+      body.razorpay_order_id ||
+      body.razorpayOrderId;
+
+    const razorpay_payment_id =
+      body.razorpay_payment_id ||
+      body.razorpayPaymentId;
+
+    const razorpay_signature =
+      body.razorpay_signature ||
+      body.razorpaySignature;
+
+    const orderId =
+      body.orderId;
+
+    /* =======================================================
+       ✅ VALIDATION
+    ======================================================= */
 
     if (
       !razorpay_order_id ||
@@ -49,6 +83,17 @@ export async function POST(req: Request) {
       !razorpay_signature ||
       !orderId
     ) {
+
+      console.error(
+        "❌ MISSING PAYMENT DATA:",
+        {
+          razorpay_order_id,
+          razorpay_payment_id,
+          razorpay_signature,
+          orderId,
+        }
+      );
+
       return NextResponse.json(
         {
           error:
@@ -67,18 +112,37 @@ export async function POST(req: Request) {
     const {
       data: order,
       error: orderError,
-    } = await supabaseAdmin
-      .from("orders")
-      .select("*")
-      .eq("id", orderId)
-      .single();
+    } =
+      await supabaseAdmin
+        .from("orders")
+        .select(`
+          *,
+          
+          order_items (
+            id,
+            variant_id,
+            quantity,
+            seller_earning,
+            platform_fee,
+            shipping_fee,
+            gst_amount,
+            final_price,
+            status
+          )
+        `)
+        .eq(
+          "id",
+          orderId
+        )
+        .single();
 
     if (
       orderError ||
       !order
     ) {
+
       console.error(
-        "❌ ORDER FETCH ERROR:",
+        "❌ ORDER ERROR:",
         orderError
       );
 
@@ -94,16 +158,18 @@ export async function POST(req: Request) {
     }
 
     /* =======================================================
-       🔐 SECURITY CHECK
+       🔐 SECURITY
     ======================================================= */
 
     if (
       order.customer_id !==
       user.id
     ) {
+
       return NextResponse.json(
         {
-          error: "Forbidden",
+          error:
+            "Forbidden",
         },
         {
           status: 403,
@@ -112,22 +178,29 @@ export async function POST(req: Request) {
     }
 
     /* =======================================================
-       🔁 ALREADY PAID
+       ✅ ALREADY PAID
     ======================================================= */
 
     if (
       order.payment_status ===
       "paid"
     ) {
+
       return NextResponse.json({
         success: true,
 
         alreadyPaid: true,
+
+        orderId:
+          order.id,
+
+        orderCode:
+          order.order_code,
       });
     }
 
     /* =======================================================
-       🔑 VERIFY RAZORPAY SIGNATURE
+       🔑 VERIFY SIGNATURE
     ======================================================= */
 
     const generatedSignature =
@@ -142,13 +215,42 @@ export async function POST(req: Request) {
         )
         .digest("hex");
 
+    console.log(
+      "GENERATED SIGNATURE:",
+      generatedSignature
+    );
+
+    console.log(
+      "RAZORPAY SIGNATURE:",
+      razorpay_signature
+    );
+
     if (
       generatedSignature !==
       razorpay_signature
     ) {
+
       console.error(
         "❌ INVALID SIGNATURE"
       );
+
+      /* =======================================================
+         FAILED PAYMENT
+      ======================================================= */
+
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          payment_status:
+            "failed",
+
+          status:
+            "cancelled",
+        })
+        .eq(
+          "id",
+          order.id
+        );
 
       return NextResponse.json(
         {
@@ -168,18 +270,23 @@ export async function POST(req: Request) {
     const {
       data: payment,
       error: paymentError,
-    } = await supabaseAdmin
-      .from("payments")
-      .select("*")
-      .eq("order_id", order.id)
-      .maybeSingle();
+    } =
+      await supabaseAdmin
+        .from("payments")
+        .select("*")
+        .eq(
+          "order_id",
+          order.id
+        )
+        .maybeSingle();
 
     if (
       paymentError ||
       !payment
     ) {
+
       console.error(
-        "❌ PAYMENT FETCH ERROR:",
+        "❌ PAYMENT ERROR:",
         paymentError
       );
 
@@ -195,13 +302,15 @@ export async function POST(req: Request) {
     }
 
     /* =======================================================
-       🔐 ORDER VALIDATION
+       🔐 VALIDATE ORDER
     ======================================================= */
 
     if (
+      payment.razorpay_order_id &&
       payment.razorpay_order_id !==
-      razorpay_order_id
+        razorpay_order_id
     ) {
+
       return NextResponse.json(
         {
           error:
@@ -214,121 +323,257 @@ export async function POST(req: Request) {
     }
 
     /* =======================================================
-       📦 FETCH ORDER ITEMS
+       🧠 CALCULATE TOTALS
     ======================================================= */
 
-    const {
-      data: items,
-      error: itemsError,
-    } = await supabaseAdmin
-      .from("order_items")
-      .select("*")
-      .eq(
-        "order_id",
-        order.id
-      );
+    const items =
+      order.order_items || [];
 
-    if (
-      itemsError ||
-      !items?.length
-    ) {
-      console.error(
-        "❌ ORDER ITEMS ERROR:",
-        itemsError
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Order items not found",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    /* =======================================================
-       💰 CALCULATE TOTALS
-    ======================================================= */
-
-    let sellerTotal = 0;
+    let sellerPayout = 0;
 
     let platformProfit = 0;
 
+    let shippingTotal = 0;
+
+    let gstTotal = 0;
+
     for (const item of items) {
-      const quantity =
-        Number(
-          item.quantity || 0
-        );
 
-      const costPrice =
-        Number(
-          item.cost_price || 0
-        );
+      sellerPayout += Number(
+        item.seller_earning ||
+          0
+      );
 
-      const finalPrice =
-        Number(
-          item.final_price || 0
-        );
+      platformProfit += Number(
+        item.platform_fee ||
+          0
+      );
 
-      sellerTotal +=
-        costPrice * quantity;
+      shippingTotal += Number(
+        item.shipping_fee ||
+          0
+      );
 
-      platformProfit +=
-        (finalPrice -
-          costPrice) *
-        quantity;
+      gstTotal += Number(
+        item.gst_amount ||
+          0
+      );
     }
 
-    console.log(
-      "💰 SELLER PAYOUT:",
-      sellerTotal
-    );
+    sellerPayout =
+      Math.round(
+        sellerPayout
+      );
 
-    console.log(
-      "💸 PLATFORM PROFIT:",
-      platformProfit
-    );
+    platformProfit =
+      Math.round(
+        platformProfit
+      );
+
+    shippingTotal =
+      Math.round(
+        shippingTotal
+      );
+
+    gstTotal =
+      Math.round(
+        gstTotal
+      );
 
     /* =======================================================
-       ✅ UPDATE ORDER
-       IMPORTANT:
-       PAYMENT SUCCESS ≠ SELLER ACCEPTED
+       📅 TIME
     ======================================================= */
 
     const now =
       new Date().toISOString();
 
+    /* =======================================================
+       🔥 IMPORTANT FIX
+       
+       ONLINE PAYMENT:
+       NOW reserve stock AFTER payment success
+    ======================================================= */
+
+    for (const item of items) {
+
+      const {
+        data: variant,
+        error: variantError,
+      } =
+        await supabaseAdmin
+          .from(
+            "product_variants"
+          )
+          .select(`
+            id,
+            stock,
+            reserved_stock
+          `)
+          .eq(
+            "id",
+            item.variant_id
+          )
+          .single();
+
+      if (
+        variantError ||
+        !variant
+      ) {
+
+        console.error(
+          "❌ VARIANT ERROR:",
+          variantError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Variant not found",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
+
+      const availableStock =
+        Number(
+          variant.stock || 0
+        ) -
+        Number(
+          variant.reserved_stock ||
+            0
+        );
+
+      if (
+        availableStock <
+        Number(
+          item.quantity
+        )
+      ) {
+
+        console.error(
+          "❌ OUT OF STOCK"
+        );
+
+        /* =======================================================
+           PAYMENT REFUND CASE
+        ======================================================= */
+
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            payment_status:
+              "refund_pending",
+
+            status:
+              "cancelled",
+          })
+          .eq(
+            "id",
+            order.id
+          );
+
+        return NextResponse.json(
+          {
+            error:
+              "Product went out of stock",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      /* =======================================================
+         RESERVE STOCK
+      ======================================================= */
+
+      const {
+        error:
+          reserveError,
+      } =
+        await supabaseAdmin
+          .from(
+            "product_variants"
+          )
+          .update({
+            reserved_stock:
+              Number(
+                variant.reserved_stock ||
+                  0
+              ) + item.quantity,
+          })
+          .eq(
+            "id",
+            item.variant_id
+          );
+
+      if (
+        reserveError
+      ) {
+
+        console.error(
+          "❌ RESERVE ERROR:",
+          reserveError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Failed to reserve stock",
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+    }
+
+    /* =======================================================
+       ✅ UPDATE ORDER
+    ======================================================= */
+
     const {
-      error: updateOrderError,
-    } = await supabaseAdmin
-      .from("orders")
-      .update({
-        payment_status:
-          "paid",
+      error:
+        orderUpdateError,
+    } =
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          payment_status:
+            "paid",
 
-        /*
-          KEEP ORDER IN PLACED STATE
+          status:
+            "placed",
 
-          Seller must manually accept
-        */
+          seller_payout:
+            sellerPayout,
 
-        status:
-          "placed",
+          platform_profit:
+            platformProfit,
 
-        seller_payout:
-          sellerTotal,
+          shipping_amount:
+            shippingTotal,
 
-        platform_profit:
-          platformProfit,
-      })
-      .eq("id", order.id);
+          gst_amount:
+            gstTotal,
 
-    if (updateOrderError) {
+          paid_at:
+            now,
+        })
+        .eq(
+          "id",
+          order.id
+        );
+
+    if (
+      orderUpdateError
+    ) {
+
       console.error(
         "❌ ORDER UPDATE ERROR:",
-        updateOrderError
+        orderUpdateError
       );
 
       return NextResponse.json(
@@ -348,28 +593,26 @@ export async function POST(req: Request) {
 
     const {
       error:
-        updateItemsError,
-    } = await supabaseAdmin
-      .from("order_items")
-      .update({
-        /*
-          KEEP ITEMS IN PLACED STATE
-        */
-
-        status:
-          "placed",
-      })
-      .eq(
-        "order_id",
-        order.id
-      );
+        orderItemsError,
+    } =
+      await supabaseAdmin
+        .from("order_items")
+        .update({
+          status:
+            "placed",
+        })
+        .eq(
+          "order_id",
+          order.id
+        );
 
     if (
-      updateItemsError
+      orderItemsError
     ) {
+
       console.error(
-        "❌ ORDER ITEMS UPDATE ERROR:",
-        updateItemsError
+        "❌ ORDER ITEMS ERROR:",
+        orderItemsError
       );
 
       return NextResponse.json(
@@ -389,26 +632,35 @@ export async function POST(req: Request) {
 
     const {
       error:
-        updatePaymentError,
-    } = await supabaseAdmin
-      .from("payments")
-      .update({
-        razorpay_payment_id,
+        paymentUpdateError,
+    } =
+      await supabaseAdmin
+        .from("payments")
+        .update({
+          razorpay_payment_id,
 
-        razorpay_signature,
+          razorpay_signature,
 
-        status: "success",
+          razorpay_order_id,
 
-        paid_at: now,
-      })
-      .eq("id", payment.id);
+          status:
+            "success",
+
+          paid_at:
+            now,
+        })
+        .eq(
+          "id",
+          payment.id
+        );
 
     if (
-      updatePaymentError
+      paymentUpdateError
     ) {
+
       console.error(
         "❌ PAYMENT UPDATE ERROR:",
-        updatePaymentError
+        paymentUpdateError
       );
 
       return NextResponse.json(
@@ -424,9 +676,13 @@ export async function POST(req: Request) {
 
     /* =======================================================
        🛒 CLEAR CART
+       
+       ✅ NOW SAFE
+       payment successful
     ======================================================= */
 
     try {
+
       await supabaseAdmin
         .from("cart")
         .delete()
@@ -434,9 +690,13 @@ export async function POST(req: Request) {
           "user_id",
           user.id
         );
-    } catch (cartError) {
+
+    } catch (
+      cartError
+    ) {
+
       console.error(
-        "❌ CART CLEAR ERROR:",
+        "❌ CART ERROR:",
         cartError
       );
     }
@@ -446,10 +706,9 @@ export async function POST(req: Request) {
     ======================================================= */
 
     try {
-      const {
-        revalidatePath,
-      } = await import(
-        "next/cache"
+
+      revalidatePath(
+        "/cart"
       );
 
       revalidatePath(
@@ -461,12 +720,20 @@ export async function POST(req: Request) {
       );
 
       revalidatePath(
+        "/dashboard/user/orders"
+      );
+
+      revalidatePath(
         `/dashboard/user/orders/${order.order_code}`
       );
-    } catch (e) {
+
+    } catch (
+      revalidateError
+    ) {
+
       console.error(
-        "REVALIDATE ERROR:",
-        e
+        "❌ REVALIDATE ERROR:",
+        revalidateError
       );
     }
 
@@ -486,16 +753,19 @@ export async function POST(req: Request) {
       paymentId:
         razorpay_payment_id,
     });
-  } catch (error) {
+
+  } catch (error: any) {
+
     console.error(
-      "❌ VERIFY API ERROR:",
+      "🔥 VERIFY ERROR:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "Something went wrong during payment verification",
+          error?.message ||
+          "Payment verification failed",
       },
       {
         status: 500,
